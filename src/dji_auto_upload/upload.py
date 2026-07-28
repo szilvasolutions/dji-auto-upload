@@ -132,4 +132,26 @@ def upload_files(
 
     if proc.returncode == 0:
         return UploadResult(succeeded=list(basenames), failed=[], rc=0)
-    return UploadResult(succeeded=[], failed=list(basenames), rc=proc.returncode)
+
+    if len(basenames) == 1:
+        return UploadResult(succeeded=[], failed=list(basenames), rc=proc.returncode)
+
+    # Batch failed. rclone gives us no reliable per-file verdict, so retry each
+    # file on its own: successes get ledgered, so a flaky batch can never cause
+    # the whole album to re-upload (Google Photos can't dedupe server-side —
+    # every duplicate upload becomes a duplicate photo).
+    log.warning(
+        "batch upload to %s failed (rc=%d) — retrying %d file(s) individually",
+        target, proc.returncode, len(basenames),
+    )
+    succeeded: list[str] = []
+    failed: list[str] = []
+    for name in basenames:
+        single = upload_files(
+            stage_dir, [name], remote_path, remote=remote, behaviour=behaviour
+        )
+        if single.rc == 0:
+            succeeded.append(name)
+        else:
+            failed.append(name)
+    return UploadResult(succeeded=succeeded, failed=failed, rc=0 if not failed else 1)

@@ -16,21 +16,23 @@ from pathlib import Path
 
 from .cleanup import (
     delete_files,
+    drone_clock_sane,
     files_older_than,
     prune_stage,
+    select_deletable,
 )
 from .config import Config
 from .copy import copy_files
 from .errors import (
     DroneDisconnected,
     InsufficientSpace,
-    InventoryError,
     OffloadError,
 )
 from .inventory import FileInfo, group_by_date, walk_dcim
-from .ledger import append_to_ledger, files_needing_upload, ledger_path
+from .ledger import append_to_ledger, files_needing_upload, ledger_path, read_ledger
 from .logging_setup import tail_log
 from .notifier import Notifier, escape
+from .platform_glue import eject_volume, remount_ro, remount_rw
 from .stage import existing_stage_dirs, stage_dir_for
 from .upload import remote_reachable, upload_files
 
@@ -43,6 +45,7 @@ class OffloadRun:
     notifier: Notifier
     volume: Path
     dcim: Path
+    dry_run: bool = False
 
     stage_base: Path = field(init=False)
     new_files_by_date: dict[date, list[FileInfo]] = field(init=False, default_factory=dict)
@@ -56,6 +59,9 @@ class OffloadRun:
     # ---- Public API ----------------------------------------------------
 
     def execute(self) -> None:
+        if self.dry_run:
+            self._dry_run_report()
+            return
         self.notifier.send(
             "start",
             f"🛸 DJI volume detected at <code>{escape(str(self.volume))}</code>. Starting offload…",
@@ -66,8 +72,12 @@ class OffloadRun:
         self._copy()
         self._upload()
         self._cleanup_drone()
+        ejected = self._eject()
         self._post_run_prune()
-        self.notifier.send("done", "🏁 Offload run finished.")
+        done_msg = "🏁 Offload run finished."
+        if ejected:
+            done_msg += " Drone ejected — safe to unplug. 🔌"
+        self.notifier.send("done", done_msg)
 
     # ---- Stages --------------------------------------------------------
 
@@ -75,9 +85,17 @@ class OffloadRun:
         log.info("stage=inventory dcim=%s", self.dcim)
         all_files = walk_dcim(self.dcim, self.config.detect.extensions)
         if not all_files:
-            raise InventoryError(
-                f"no media files found in {self.dcim} — not a DJI media volume?"
+            # An empty card is the normal state after a successful offload with
+            # drone cleanup on — not a failure. Carry on so any still-pending
+            # staged uploads get retried, then finish quietly.
+            log.info("no media files on %s — nothing new to copy", self.dcim)
+            self.new_files_by_date = {}
+            self.total_new_count = 0
+            self.total_new_bytes = 0
+            self.notifier.send(
+                "info", "ℹ️ No media on the drone — checking for pending uploads."
             )
+            return
 
         by_date = group_by_date(all_files)
         new_by_date: dict[date, list[FileInfo]] = {}
@@ -140,6 +158,16 @@ class OffloadRun:
         if not self.new_files_by_date:
             return
         log.info("stage=copy")
+        progress_count = 0
+
+        def _on_progress(fi: FileInfo) -> None:
+            nonlocal progress_count
+            progress_count += 1
+            log.info(
+                "copied %d/%d: %s (%.1f MB)",
+                progress_count, self.total_new_count, fi.name, fi.size / 1024 / 1024,
+            )
+
         for d, files in self.new_files_by_date.items():
             stage = stage_dir_for(self.stage_base, d)
             try:
@@ -148,6 +176,7 @@ class OffloadRun:
                     stage,
                     verify=self.config.behaviour.verify_after_copy,
                     timeout_sec=self.config.behaviour.copy_timeout_sec,
+                    on_progress=_on_progress,
                 )
             except DroneDisconnected:
                 # Stage is retained — replug to resume.
@@ -187,7 +216,7 @@ class OffloadRun:
         all_dates = [d.name for d in existing_stage_dirs(self.stage_base)]
         ok: list[str] = []
         skipped: list[str] = []
-        failed: list[tuple[str, int]] = []
+        failed: list[tuple[str, int, int, int]] = []
 
         # First pass: figure out what to upload per date.
         per_date: dict[str, list[str]] = {}
@@ -225,18 +254,24 @@ class OffloadRun:
                 behaviour=self.config.behaviour,
             )
             album = f"DJI-{d_name}"
-            if result.rc == 0:
+            # Ledger every confirmed file, even from a partially-failed batch —
+            # the per-file dedup is what keeps Google Photos duplicate-free.
+            if result.succeeded:
                 append_to_ledger(stage, result.succeeded)
                 # Bump sentinel mtime so prune retention starts ticking from now.
                 ledger_path(stage).touch()
+            if result.rc == 0:
                 ok.append(f"{album} ({len(result.succeeded)})")
             else:
-                failed.append((album, result.rc))
+                failed.append((album, result.rc, len(result.succeeded), len(result.failed)))
 
         if failed:
             ok_str = ", ".join(ok) if ok else "none"
             sk_str = ", ".join(skipped) if skipped else "none"
-            fail_str = ", ".join(f"{a} (exit {rc})" for a, rc in failed)
+            fail_str = ", ".join(
+                f"{a} (exit {rc}, {n_ok} uploaded, {n_bad} failed)"
+                for a, rc, n_ok, n_bad in failed
+            )
             raise OffloadError(
                 f"upload partially failed — OK: {ok_str}; skipped: {sk_str}; failed: {fail_str}",
                 stage="upload",
@@ -251,26 +286,137 @@ class OffloadRun:
     def _cleanup_drone(self) -> None:
         if not self.config.behaviour.delete_drone_files:
             return
-        if self.config.retention.drone_days <= 0:
+        days = self.config.retention.drone_days
+        if days <= 0:
             return
         log.info("stage=cleanup_drone")
-        old = files_older_than(self.dcim, self.config.retention.drone_days)
-        if not old:
+        candidates = files_older_than(self.dcim, days)
+        if not candidates:
             self.notifier.send(
-                "cleanup",
-                f"🧹 No files older than {self.config.retention.drone_days} day(s) on drone.",
+                "cleanup", f"🧹 No files older than {days} day(s) on drone."
             )
             return
-        n = delete_files(old)
-        self.notifier.send(
-            "cleanup",
-            f"🧹 Removed <b>{n}</b> file(s) older than "
-            f"{self.config.retention.drone_days} day(s) from drone.",
+        # Sanity-check every file on the card, not just the age-eligible ones:
+        # a future-dated file is by definition never a candidate, yet it is the
+        # clearest evidence the RTC is wrong.
+        if not drone_clock_sane(self._all_drone_files()):
+            self.notifier.send(
+                "cleanup",
+                "🧹 Drone clock looks wrong (files dated in the future or >10 years "
+                "ago) — skipping drone cleanup this run.",
+            )
+            return
+
+        # Age makes a file a candidate; only ledger-confirmed uploads (or their
+        # sidecars) are actually deleted. This is what makes "we only delete
+        # what's safely in the cloud" literally true, file by file.
+        uploaded = self._ledgered_basenames()
+        to_delete = select_deletable(
+            candidates, uploaded, self.config.detect.sidecar_extensions
         )
+        kept = len(candidates) - len(to_delete)
+        if not to_delete:
+            self.notifier.send(
+                "cleanup",
+                f"🧹 {len(candidates)} old file(s) on drone, but none confirmed "
+                "uploaded — nothing deleted.",
+            )
+            return
+
+        if not remount_rw(self.volume):
+            self.notifier.send(
+                "cleanup",
+                "🧹 Could not remount drone read-write — skipping cleanup this run.",
+            )
+            return
+        try:
+            n = delete_files(to_delete)
+        finally:
+            remount_ro(self.volume)
+
+        msg = f"🧹 Removed <b>{n}</b> uploaded file(s) older than {days} day(s) from drone."
+        if kept:
+            msg += f" Kept {kept} file(s) not yet confirmed uploaded."
+        self.notifier.send("cleanup", msg)
+
+    def _all_drone_files(self) -> list[Path]:
+        """Every file in the drone's media folder, regardless of extension."""
+        try:
+            return [f for f in self.dcim.iterdir() if f.is_file()]
+        except OSError:
+            return []
+
+    def _ledgered_basenames(self) -> set[str]:
+        """Union of every stage dir's .uploaded ledger."""
+        out: set[str] = set()
+        for d in existing_stage_dirs(self.stage_base):
+            out |= read_ledger(d)
+        return out
+
+    def _eject(self) -> bool:
+        if not self.config.behaviour.eject_when_done:
+            return False
+        ok = eject_volume(self.volume)
+        if not ok:
+            log.warning(
+                "could not auto-eject %s — eject manually before unplugging", self.volume
+            )
+        return ok
 
     def _post_run_prune(self) -> None:
         log.info("stage=prune_stage_post")
         prune_stage(self.stage_base, self.config.retention.stage_days)
+
+    # ---- Dry run --------------------------------------------------------
+
+    def _dry_run_report(self) -> list[str]:
+        """Compute the full plan (copy / upload / delete) without changing
+        anything, print it, and return the lines (for tests)."""
+        self._inventory()
+
+        lines: list[str] = [f"DRY RUN — no changes will be made. Volume: {self.volume}"]
+
+        if self.new_files_by_date:
+            for d, files in sorted(self.new_files_by_date.items()):
+                mb = sum(f.size for f in files) // 1024 // 1024
+                lines.append(f"COPY   {d}: {len(files)} file(s), ~{mb} MB")
+        else:
+            lines.append("COPY   nothing new to copy")
+
+        pending_any = False
+        for stage in existing_stage_dirs(self.stage_base):
+            pending = files_needing_upload(stage)
+            if pending:
+                pending_any = True
+                lines.append(f"UPLOAD {stage.name}: {len(pending)} staged file(s) pending")
+        if self.new_files_by_date:
+            lines.append("UPLOAD plus every file copied above")
+        elif not pending_any:
+            lines.append("UPLOAD nothing pending")
+
+        behaviour = self.config.behaviour
+        days = self.config.retention.drone_days
+        if behaviour.delete_drone_files and days > 0:
+            candidates = files_older_than(self.dcim, days)
+            if candidates and drone_clock_sane(self._all_drone_files()):
+                deletable = select_deletable(
+                    candidates, self._ledgered_basenames(),
+                    self.config.detect.sidecar_extensions,
+                )
+                lines.append(
+                    f"DELETE drone: {len(deletable)} of {len(candidates)} old file(s) "
+                    "are confirmed uploaded and would be deleted"
+                )
+                lines.extend(f"       - {f.name}" for f in deletable[:20])
+            else:
+                lines.append("DELETE drone: nothing eligible")
+        else:
+            lines.append("DELETE drone: disabled (delete_drone_files=false or drone_days=0)")
+
+        for line in lines:
+            log.info("dry-run: %s", line)
+        print("\n".join(lines))
+        return lines
 
 
 def report_failure(notifier: Notifier, exc: BaseException, log_file: Path | None) -> None:

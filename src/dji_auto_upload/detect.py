@@ -17,6 +17,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .config import DetectConfig
 
@@ -46,6 +47,10 @@ def is_dji_volume(vol: VolumeInfo, cfg: DetectConfig) -> bool:
         for needle in cfg.volume_labels:
             if needle.lower() in vol.label.lower():
                 return True
+    if cfg.strict_detect:
+        # Strict mode: only vendor-ID / label matches count. No DCIM fallback,
+        # so a random camera card never triggers an offload.
+        return False
     return has_dji_dcim(vol.mountpoint, cfg.dcim_subdirs)
 
 
@@ -88,7 +93,7 @@ def _enumerate_linux() -> list[VolumeInfo]:
 
     out: list[VolumeInfo] = []
 
-    def walk(nodes: list[dict], parent_vendor: str | None) -> None:
+    def walk(nodes: list[dict[str, Any]], parent_vendor: str | None) -> None:
         for n in nodes:
             vendor = (n.get("vendor") or parent_vendor or "").strip() or None
             mp = n.get("mountpoint")
@@ -134,7 +139,7 @@ def _windows_volume_label(root: Path) -> str | None:  # pragma: no cover - Windo
         import ctypes
         from ctypes import wintypes
 
-        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        kernel32 = ctypes.windll.kernel32
         buf = ctypes.create_unicode_buffer(261)
         fs_buf = ctypes.create_unicode_buffer(261)
         ok = kernel32.GetVolumeInformationW(

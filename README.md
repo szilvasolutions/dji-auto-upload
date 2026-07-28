@@ -53,7 +53,14 @@ doesn't mount as a drive, so nothing that watches for drives can see it.
   left off and never sends a file again.
 - **It won't delete your footage behind your back.** Out of the box it removes
   nothing from the drone. Card-trimming is something you switch on during setup,
-  and even then it only runs once a clip is confirmed in the cloud.
+  and even then a file is only removed if the upload ledger proves that exact
+  file reached your cloud. Telemetry sidecars (`.SRT`, `.LRF`) are only removed
+  along with the video they belong to, and if the drone's clock looks wrong the
+  cleanup is skipped entirely rather than guessing.
+- **Try it before you trust it.** `dji-auto-upload run --dry-run` prints exactly
+  what it would copy, upload, and delete, and changes nothing.
+- **It tells you when it's safe to unplug.** When the run finishes it ejects the
+  drone and says so, instead of leaving you guessing mid-copy.
 - **It tells you when something breaks.** Optional Telegram messages for each
   stage, with the tail end of the log if a run fails.
 
@@ -194,10 +201,15 @@ path_template = "album/DJI-{date}"   # {date} expands to YYYY-MM-DD
 stage_days = 2     # delete local copies N days after upload (0 = keep forever)
 drone_days = 0     # delete drone files older than N days (0 = never touch the drone)
 
+[detect]
+sidecar_extensions = ["srt", "lrf"]  # kept with their video, deleted only with it
+strict_detect      = false           # true = only trigger on DJI vendor ID / volume label
+
 [behaviour]
 disk_headroom_mb   = 512
 verify_after_copy  = true
 delete_drone_files = false   # drone-side deletion is strictly opt-in (set during setup)
+eject_when_done    = true    # eject the drone when finished, so it's safe to unplug
 
 [notifier]
 enabled = true
@@ -214,6 +226,7 @@ your bot, so there's no copy-pasting from `getUpdates` URLs.
 ```
 dji-auto-upload setup              # interactive setup wizard
 dji-auto-upload run [--device P]   # one offload pass (autodetects if --device omitted)
+dji-auto-upload run --dry-run      # show the full plan, change nothing
 dji-auto-upload install-trigger    # install per-OS auto-trigger
 dji-auto-upload uninstall-trigger
 dji-auto-upload status             # config summary, rclone reachable, telegram reachable

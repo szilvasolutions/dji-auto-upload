@@ -274,8 +274,15 @@ def _discover_chat_id(token: str) -> str | None:
             chat = (u.get("message") or {}).get("chat") or {}
             if chat.get("id") is not None:
                 cid = str(chat["id"])
-                console.print(f"[green]Found chat ID: {cid}[/green] ({chat.get('first_name', '?')})")
-                return cid
+                who = chat.get("first_name") or chat.get("username") or "?"
+                # Anyone can message a bot. Confirm this sender is actually the
+                # user before wiring every future notification to that chat.
+                if Confirm.ask(
+                    f"Got a message from [bold]{who}[/bold] (chat ID {cid}). Is that you?",
+                    default=True,
+                ):
+                    return cid
+                console.print("[yellow]Ignoring that sender — still watching…[/yellow]")
         time.sleep(2)
     console.print("[yellow]Timed out without seeing a message.[/yellow]")
     return None
@@ -304,8 +311,13 @@ def _install_trigger_prompt() -> None:
     # We don't have cfg threaded in here; callers will pass it in. For now,
     # re-load and call install.
     from .config import load
+    from .errors import ConfigError
     from .installers import install
-    install(load(), force=False)
+
+    try:
+        install(load(), force=False)
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
 
 
 def _summary(remote: str, template: str, doc: tomlkit.TOMLDocument) -> None:

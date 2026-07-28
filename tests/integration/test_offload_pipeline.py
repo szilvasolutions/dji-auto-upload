@@ -10,10 +10,6 @@ sets RCLONE_BIN to our fake binary, runs the pipeline, and asserts that:
 
 from __future__ import annotations
 
-import os
-import stat
-import sys
-from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -33,8 +29,6 @@ from dji_auto_upload.ledger import read_ledger
 from dji_auto_upload.offload import OffloadRun
 from dji_auto_upload.paths import AppPaths
 
-FAKE_RCLONE = Path(__file__).parent.parent / "fixtures" / "fake_rclone.py"
-
 
 class RecordingNotifier:
     def __init__(self) -> None:
@@ -42,47 +36,6 @@ class RecordingNotifier:
 
     def send(self, event: str, message: str) -> None:
         self.events.append((event, message))
-
-
-@pytest.fixture
-def fake_rclone(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    target = tmp_path / "cloud"
-    target.mkdir()
-
-    # Build a tiny shell wrapper so subprocess can exec it as a single binary.
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    rclone_bin = bin_dir / "rclone"
-    rclone_bin.write_text(
-        f"#!/usr/bin/env bash\nexec {sys.executable} {FAKE_RCLONE} \"$@\"\n",
-        encoding="utf-8",
-    )
-    rclone_bin.chmod(rclone_bin.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-    monkeypatch.setenv("RCLONE_BIN", str(rclone_bin))
-    monkeypatch.setenv("FAKE_RCLONE_REMOTE", "testremote")
-    monkeypatch.setenv("FAKE_RCLONE_TARGET", str(target))
-    return target
-
-
-@pytest.fixture
-def synth_volume(tmp_path: Path) -> Path:
-    """Build a fake DJI mountpoint with two recording dates."""
-    media = tmp_path / "volume" / "DCIM" / "100MEDIA"
-    media.mkdir(parents=True)
-
-    feb1 = datetime(2026, 2, 1, 12, 0, 0).timestamp()
-    feb2 = datetime(2026, 2, 2, 12, 0, 0).timestamp()
-    for name, ts in [
-        ("DJI_001.MP4", feb1),
-        ("DJI_002.JPG", feb1),
-        ("DJI_003.MP4", feb2),
-    ]:
-        p = media / name
-        p.write_bytes(b"x" * 16)
-        os.utime(p, (ts, ts))
-
-    return tmp_path / "volume"
 
 
 def _make_config(paths: AppPaths) -> Config:
@@ -96,6 +49,7 @@ def _make_config(paths: AppPaths) -> Config:
             upload_timeout_sec=30,
             verify_after_copy=True,
             delete_drone_files=False,
+            eject_when_done=False,  # keep tests hermetic — no diskutil/powershell
         ),
         notifier=NotifierConfig(enabled=False),
         logging=LoggingConfig(),

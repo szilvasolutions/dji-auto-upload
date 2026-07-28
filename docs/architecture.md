@@ -42,14 +42,20 @@
                 └────┬─────┘
                      ▼
                 ┌──────────┐
-                │ cleanup  │  delete drone files older than drone_days
-                │  drone   │  (skipped if delete_drone_files=false or drone_days<=0)
-                └────┬─────┘
+                │ cleanup  │  age makes a file a candidate; it is deleted only
+                │  drone   │  if the ledger proves it (or, for a sidecar, its
+                │          │  paired video) was uploaded. Skipped entirely if
+                │          │  delete_drone_files=false, drone_days<=0, or the
+                └────┬─────┘  drone's clock is untrustworthy.
+                     ▼
+                ┌──────────┐
+                │  eject   │  unmount/eject so the user can safely unplug
+                └────┬─────┘  (behaviour.eject_when_done)
                      ▼
                 ┌──────────┐
                 │  prune   │  delete stage dirs whose .uploaded mtime is past
-                │  stage   │  retention. Sentinel-gated: never deletes
-                └────┬─────┘  un-uploaded data.
+                │  stage   │  retention. Sentinel-gated, and skipped while any
+                └────┬─────┘  file in the dir is still pending upload.
                      ▼
                 ┌──────────┐
                 │  done    │  fire `done` notify, release lock, exit 0

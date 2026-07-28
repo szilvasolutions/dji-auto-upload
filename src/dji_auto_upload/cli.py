@@ -19,7 +19,7 @@ from .config import Config, load
 from .errors import AlreadyRunning, OffloadError
 from .lock import single_flight
 from .logging_setup import configure as configure_logging
-from .notifier import make_notifier
+from .notifier import Notifier, make_notifier
 from .paths import ensure_dirs, get_paths
 
 app = typer.Typer(
@@ -93,6 +93,10 @@ def status(ctx: typer.Context) -> None:
         table.add_row("telegram", "[green]configured[/green]")
     else:
         table.add_row("telegram", "[dim]disabled[/dim]")
+    from .logging_setup import tail_log
+
+    last = tail_log(cfg.paths.log_file, n=1).strip()
+    table.add_row("last run", last or "[dim](no runs logged yet)[/dim]")
     console.print(table)
 
 
@@ -119,9 +123,14 @@ def install_trigger(
     force: bool = typer.Option(False, "--force", help="Overwrite an existing trigger."),
 ) -> None:
     """Install the per-OS auto-trigger (udev / launchd / Scheduled Task)."""
+    from .errors import ConfigError
     from .installers import install
 
-    install(ctx.obj, force=force)
+    try:
+        install(ctx.obj, force=force)
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from None
 
 
 @app.command()
@@ -158,14 +167,21 @@ def run(
         "--device",
         help="Mount point or block device path. If omitted, autodetect.",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show what would be copied, uploaded, and deleted. Changes nothing.",
+    ),
 ) -> None:
     """Run one offload pass against the given device, or autodetect."""
+    from .notifier import NullNotifier
+
     cfg: Config = ctx.obj
-    notifier = make_notifier(cfg)
+    notifier: Notifier = NullNotifier() if dry_run else make_notifier(cfg)
 
     try:
         with single_flight(cfg.paths.lock_file):
-            _run_inner(cfg, notifier, device)
+            _run_inner(cfg, notifier, device, dry_run=dry_run)
     except AlreadyRunning:
         log.info("another offload pass is already in flight; exiting silently")
         raise typer.Exit(code=0) from None
@@ -189,7 +205,7 @@ def run(
         raise typer.Exit(code=1) from None
 
 
-def _run_inner(cfg: Config, notifier, device: str | None) -> None:
+def _run_inner(cfg: Config, notifier: Notifier, device: str | None, *, dry_run: bool = False) -> None:
     from .detect import find_dji_volume, has_dji_dcim
     from .errors import DetectError, MountError
     from .inventory import find_dcim
@@ -216,7 +232,9 @@ def _run_inner(cfg: Config, notifier, device: str | None) -> None:
     if dcim is None:
         raise DetectError(f"could not locate a DCIM folder under {volume_path}")
 
-    OffloadRun(config=cfg, notifier=notifier, volume=volume_path, dcim=dcim).execute()
+    OffloadRun(
+        config=cfg, notifier=notifier, volume=volume_path, dcim=dcim, dry_run=dry_run
+    ).execute()
 
 
 def main() -> None:

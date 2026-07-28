@@ -44,6 +44,7 @@ def configure(log_file: Path, cfg: LoggingConfig, *, console_verbose: bool = Fal
     else:
         console_level = logging.INFO
 
+    console: logging.Handler
     if sys.stdout.isatty():
         console = RichHandler(rich_tracebacks=True, show_time=False, show_path=False)
     else:

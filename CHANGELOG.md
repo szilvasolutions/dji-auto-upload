@@ -19,3 +19,33 @@ Initial public release.
 - Sentinel-based stage prune (never deletes un-uploaded data).
 - Disk-space precheck and self-healing pre-copy prune.
 - Drone-disconnect detection with replug-to-resume semantics.
+- `--dry-run`: prints the full copy/upload/delete plan without changing anything.
+- Auto-eject when the run finishes, with a "safe to unplug" notification.
+- Per-file upload fallback: if an rclone batch fails, each file is retried
+  individually and every confirmed upload is ledgered, so a flaky transfer can
+  never cause an album to be re-uploaded (which would duplicate it in Google
+  Photos, whose backend cannot dedupe server-side).
+- Sidecar handling: `.SRT` telemetry and `.LRF` proxies are removed only
+  together with the video they belong to.
+- Drone-clock sanity check: cleanup is skipped when file timestamps are in the
+  future or absurdly old (RTC reset), instead of deleting on bad dates.
+- `strict_detect` option to trigger only on DJI vendor ID / volume label.
+- Copy progress logging and a "last run" line in `dji-auto-upload status`.
+
+### Security
+- Trigger inputs (`vendor_ids`, `volume_labels`) are validated before being
+  rendered into the root-owned udev rule or the logon PowerShell watcher, so a
+  tampered config cannot inject commands that would run as root.
+- Removable media is mounted `nosuid,nodev,noexec` in addition to read-only.
+- Telegram chat-ID auto-discovery now asks for confirmation before binding to
+  the sender, so a stranger messaging your bot can't capture your notifications.
+- Credentials are written through a 0600 file descriptor rather than being
+  chmod'ed after the fact, closing a brief world-readable window.
+
+### Fixed
+- Drone cleanup deleted age-eligible files that had never been uploaded
+  (including sidecars, which are never uploaded). Deletion is now gated per file
+  on the `.uploaded` ledger.
+- Stage dirs with pending uploads could be pruned once the sentinel aged out.
+- An empty drone (the normal state after a successful offload with cleanup on)
+  raised an inventory error and fired a failure notification on every replug.

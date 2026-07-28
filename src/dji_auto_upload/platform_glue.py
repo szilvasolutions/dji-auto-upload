@@ -37,8 +37,13 @@ def resolve_volume(device: str, cfg: Config) -> Path:
     return p
 
 
+# Untrusted removable media: never honour setuid bits, device nodes, or
+# executables on the card.
+_MOUNT_HARDENING = "nosuid,nodev,noexec"
+
+
 def _mount_linux_ro(dev: Path, cfg: Config) -> Path:
-    """Mount a block device RO at a unique runtime path."""
+    """Mount a block device RO (nosuid,nodev,noexec) at a unique runtime path."""
     if not dev.exists():
         raise MountError(f"block device {dev} not found")
 
@@ -46,7 +51,7 @@ def _mount_linux_ro(dev: Path, cfg: Config) -> Path:
     target.mkdir(parents=True, exist_ok=True)
 
     proc = subprocess.run(
-        ["mount", "-o", "ro", str(dev), str(target)],
+        ["mount", "-o", f"ro,{_MOUNT_HARDENING}", str(dev), str(target)],
         capture_output=True,
         text=True,
     )
@@ -59,7 +64,72 @@ def _mount_linux_ro(dev: Path, cfg: Config) -> Path:
     return target
 
 
-def _release_mounts() -> None:
+def is_managed_mount(mountpoint: Path) -> bool:
+    """True if this path is a mount we created (Linux --device path)."""
+    return mountpoint in _MOUNTS_TO_RELEASE
+
+
+def remount_rw(mountpoint: Path) -> bool:
+    """Briefly lift the RO flag on one of our own mounts (drone cleanup needs
+    to delete files). Hardening flags stay. Returns False on any failure."""
+    if not is_managed_mount(mountpoint):
+        return True  # macOS/Windows volumes are already writable
+    proc = subprocess.run(
+        ["mount", "-o", f"remount,rw,{_MOUNT_HARDENING}", str(mountpoint)],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        log.warning("remount rw %s failed: %s", mountpoint, proc.stderr.strip())
+    return proc.returncode == 0
+
+
+def remount_ro(mountpoint: Path) -> None:
+    """Drop back to RO after cleanup. Best-effort."""
+    if not is_managed_mount(mountpoint):
+        return
+    subprocess.run(
+        ["mount", "-o", f"remount,ro,{_MOUNT_HARDENING}", str(mountpoint)],
+        capture_output=True,
+        text=True,
+    )
+
+
+def eject_volume(volume: Path) -> bool:
+    """Cleanly detach the volume so the user can unplug. Best-effort, never raises."""
+    try:
+        if sys.platform == "darwin":
+            proc = subprocess.run(
+                ["diskutil", "eject", str(volume)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return proc.returncode == 0
+        if sys.platform == "win32":
+            drive = str(volume)[:2]  # "E:"
+            if len(drive) != 2 or not drive[0].isalpha() or drive[1] != ":":
+                return False
+            ps = (
+                "(New-Object -comObject Shell.Application)"
+                f".Namespace(17).ParseName('{drive}\\').InvokeVerb('Eject')"
+            )
+            proc = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return proc.returncode == 0
+        # Linux: unmount our own mounts now instead of waiting for atexit.
+        release_mounts()
+        return True
+    except Exception as exc:  # never let eject failure tank a finished run
+        log.warning("eject %s failed: %s", volume, exc)
+        return False
+
+
+def release_mounts() -> None:
     for mp in list(_MOUNTS_TO_RELEASE):
         try:
             subprocess.run(["umount", str(mp)], capture_output=True, text=True, timeout=10)
@@ -69,6 +139,7 @@ def _release_mounts() -> None:
             mp.rmdir()
         except OSError:
             pass
+        _MOUNTS_TO_RELEASE.remove(mp)
 
 
-atexit.register(_release_mounts)
+atexit.register(release_mounts)

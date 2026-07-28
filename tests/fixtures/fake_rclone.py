@@ -14,6 +14,10 @@ Honored env vars:
   FAKE_RCLONE_TARGET      directory acting as the cloud (required for `copy`)
   FAKE_RCLONE_EXIT        integer exit code for `copy` (default: 0)
   FAKE_RCLONE_FAIL_ON_DATE if the remote path contains this substring, exit non-zero
+  FAKE_RCLONE_FAIL_MULTI   if set, any copy with >1 file in --files-from exits 3
+                           (simulates a flaky batch; single-file retries can pass)
+  FAKE_RCLONE_FAIL_ON_NAME if any listed basename contains this substring, exit 4
+                           (simulates one poison file that always fails)
 """
 
 from __future__ import annotations
@@ -59,6 +63,22 @@ def _cmd_copy(args: list[str]) -> int:
         sys.stderr.write("FAKE_RCLONE_TARGET not set\n")
         return 2
 
+    if files_from and files_from.is_file():
+        names = [
+            line.strip()
+            for line in files_from.read_text().splitlines()
+            if line.strip()
+        ]
+    else:
+        names = [p.name for p in src.iterdir() if p.is_file() and not p.name.startswith(".")]
+
+    if os.environ.get("FAKE_RCLONE_FAIL_MULTI") and len(names) > 1:
+        return 3
+
+    fail_name = os.environ.get("FAKE_RCLONE_FAIL_ON_NAME", "")
+    if fail_name and any(fail_name in n for n in names):
+        return 4
+
     fail_on = os.environ.get("FAKE_RCLONE_FAIL_ON_DATE", "")
     if fail_on and fail_on in dest:
         return int(os.environ.get("FAKE_RCLONE_EXIT", "1"))
@@ -73,15 +93,6 @@ def _cmd_copy(args: list[str]) -> int:
     remote_name, _, path = dest.partition(":")
     out_dir = Path(target_root) / remote_name / path
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    if files_from and files_from.is_file():
-        names = [
-            line.strip()
-            for line in files_from.read_text().splitlines()
-            if line.strip()
-        ]
-    else:
-        names = [p.name for p in src.iterdir() if p.is_file() and not p.name.startswith(".")]
 
     for n in names:
         s = src / n

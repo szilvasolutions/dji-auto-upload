@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from jinja2 import Environment, FileSystemLoader
 from rich.console import Console
@@ -125,7 +126,7 @@ def watch_loop(cfg: Config) -> None:
     session = DASessionCreate(None)
     DASessionScheduleWithRunLoop(session, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode)
 
-    def on_disk(disk, _ctx):  # pragma: no cover — callback wired into CFRunLoop
+    def on_disk(disk: Any, _ctx: Any) -> None:  # pragma: no cover — callback wired into CFRunLoop
         desc = DADiskCopyDescription(disk)
         if desc is None:
             return

@@ -12,6 +12,7 @@ import stat
 import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any
 
 import tomlkit
 from tomlkit.toml_document import TOMLDocument
@@ -42,6 +43,13 @@ vendor_ids   = ["2ca3"]                      # DJI USB vendor ID
 volume_labels = ["DJI", "DJIMEDIA"]
 dcim_subdirs = ["100MEDIA", "DJI_001"]       # preferred order; fallback = first dir under DCIM
 extensions   = ["mp4", "mov", "jpg", "dng", "raw"]
+# Sidecar files (telemetry, low-res proxies) are never uploaded, but they are
+# only deleted from the drone together with their video once IT is uploaded.
+sidecar_extensions = ["srt", "lrf"]
+# true = trigger only on vendor-ID / volume-label match. false = also accept
+# any volume with a DCIM folder (catches new DJI models on day one, but will
+# also offload e.g. a GoPro card).
+strict_detect = false
 
 [behaviour]
 disk_headroom_mb   = 512
@@ -51,6 +59,7 @@ upload_transfers   = 4
 upload_retries     = 3
 verify_after_copy  = true                    # size check; mtime is preserved either way
 delete_drone_files = false                   # master switch for drone-side cleanup (opt-in)
+eject_when_done    = true                    # eject/unmount the drone when the run finishes
 
 [notifier]
 enabled = false                              # set to true once Telegram credentials are configured
@@ -92,6 +101,8 @@ class DetectConfig:
     volume_labels: tuple[str, ...] = ("DJI", "DJIMEDIA")
     dcim_subdirs: tuple[str, ...] = ("100MEDIA", "DJI_001")
     extensions: tuple[str, ...] = ("mp4", "mov", "jpg", "dng", "raw")
+    sidecar_extensions: tuple[str, ...] = ("srt", "lrf")
+    strict_detect: bool = False
 
 
 @dataclass(frozen=True)
@@ -103,6 +114,7 @@ class BehaviourConfig:
     upload_retries: int = 3
     verify_after_copy: bool = True
     delete_drone_files: bool = False
+    eject_when_done: bool = True
 
 
 @dataclass(frozen=True)
@@ -149,7 +161,7 @@ def _as_tuple_str(v: object, default: tuple[str, ...]) -> tuple[str, ...]:
     raise ConfigError(f"expected list of strings, got {type(v).__name__}")
 
 
-def _parse_config_doc(doc: TOMLDocument | dict) -> Config:
+def _parse_config_doc(doc: TOMLDocument | dict[str, Any]) -> Config:
     remote_t = doc.get("remote", {})
     retention_t = doc.get("retention", {})
     detect_t = doc.get("detect", {})
@@ -171,6 +183,8 @@ def _parse_config_doc(doc: TOMLDocument | dict) -> Config:
             volume_labels=_as_tuple_str(detect_t.get("volume_labels"), ("DJI", "DJIMEDIA")),
             dcim_subdirs=_as_tuple_str(detect_t.get("dcim_subdirs"), ("100MEDIA", "DJI_001")),
             extensions=_as_tuple_str(detect_t.get("extensions"), ("mp4", "mov", "jpg", "dng", "raw")),
+            sidecar_extensions=_as_tuple_str(detect_t.get("sidecar_extensions"), ("srt", "lrf")),
+            strict_detect=bool(detect_t.get("strict_detect", False)),
         ),
         behaviour=BehaviourConfig(
             disk_headroom_mb=int(behaviour_t.get("disk_headroom_mb", 512)),
@@ -180,6 +194,7 @@ def _parse_config_doc(doc: TOMLDocument | dict) -> Config:
             upload_retries=int(behaviour_t.get("upload_retries", 3)),
             verify_after_copy=bool(behaviour_t.get("verify_after_copy", True)),
             delete_drone_files=bool(behaviour_t.get("delete_drone_files", False)),
+            eject_when_done=bool(behaviour_t.get("eject_when_done", True)),
         ),
         notifier=NotifierConfig(
             enabled=bool(notifier_t.get("enabled", False)),
@@ -197,7 +212,7 @@ def _parse_config_doc(doc: TOMLDocument | dict) -> Config:
     )
 
 
-def _parse_credentials(doc: TOMLDocument | dict) -> TelegramCredentials:
+def _parse_credentials(doc: TOMLDocument | dict[str, Any]) -> TelegramCredentials:
     tg = doc.get("telegram", {})
     return TelegramCredentials(
         bot_token=str(tg.get("bot_token", "")),
@@ -236,8 +251,7 @@ def write_default_config(path: Path) -> None:
 def write_default_credentials(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
-        path.write_text(DEFAULT_CREDENTIALS_TOML, encoding="utf-8")
-        _chmod_600(path)
+        _atomic_write(path, DEFAULT_CREDENTIALS_TOML, mode=0o600)
 
 
 def _chmod_600(path: Path) -> None:
@@ -249,12 +263,25 @@ def _chmod_600(path: Path) -> None:
         pass
 
 
-def save_config_doc(path: Path, doc: TOMLDocument) -> None:
-    """Atomic write: tempfile → os.replace. Preserves comments."""
+def _atomic_write(path: Path, text: str, *, mode: int | None = None) -> None:
+    """tempfile → os.replace. With `mode`, the temp file is created with that
+    mode from the first byte, so secrets never transit through a 0644 window."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    if mode is not None and sys.platform != "win32":
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+    else:
+        tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)
+    if mode is not None:
+        _chmod_600(path)
+
+
+def save_config_doc(path: Path, doc: TOMLDocument) -> None:
+    """Atomic write: tempfile → os.replace. Preserves comments."""
+    _atomic_write(path, tomlkit.dumps(doc))
 
 
 def save_credentials(path: Path, creds: TelegramCredentials) -> None:
@@ -263,8 +290,7 @@ def save_credentials(path: Path, creds: TelegramCredentials) -> None:
     tg["bot_token"] = creds.bot_token
     tg["chat_id"] = creds.chat_id
     doc["telegram"] = tg
-    save_config_doc(path, doc)
-    _chmod_600(path)
+    _atomic_write(path, tomlkit.dumps(doc), mode=0o600)
 
 
 def load_config_doc(path: Path) -> TOMLDocument:

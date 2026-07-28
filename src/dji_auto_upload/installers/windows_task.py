@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 from jinja2 import Environment, FileSystemLoader
 from rich.console import Console
@@ -35,7 +36,7 @@ def _watcher_path() -> Path:
     return Path(base) / "dji-auto-upload" / "dji-watcher.ps1"
 
 
-def _render(name: str, **ctx) -> str:
+def _render(name: str, **ctx: Any) -> str:
     env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), keep_trailing_newline=True)
     return env.get_template(name).render(**ctx)
 
