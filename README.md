@@ -7,37 +7,55 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Tested on Linux/macOS/Windows](https://img.shields.io/badge/tested-linux%20%7C%20macos%20%7C%20windows-success.svg)](#per-os-installation)
 
-A cross-platform auto-offload pipeline for DJI drones. The moment you connect
-the drone over USB, it copies new footage to a local stage, uploads it to your
-chosen rclone destination (Google Drive, Photos, Dropbox, S3, anything rclone
-speaks), and — if you ask it to — trims old clips off the drone once they're
-safely backed up. All without you opening an app.
+My DJI Neo 2 doesn't have an SD card. Everything it records lives on internal
+storage, and there are only two ways to get footage off it: the DJI app, which
+does a slow Wi-Fi transfer to my phone that I have to sit and watch, or a USB
+cable. Neither is something I want to deal with after a flight.
 
-## Why this exists
+So I stopped dealing with it. Now I land, walk inside, and plug the drone into
+my computer. By the time I've set it down, the new clips are already uploading
+to the cloud and the drone's storage is clearing space for next time. I don't
+open an app, I don't drag any files, I don't click anything.
 
-I fly a DJI drone. Every time I land I want the footage in the cloud before I
-close my laptop, and I want yesterday's clips off the drone so the card never
-fills up. The vendor app needs babysitting; the cards need pulling. So I
-plugged the drone into my homelab and never thought about it again. This is
-that, packaged for everyone.
+That's the whole idea: plug in a DJI device, walk away, footage shows up in your
+cloud. It works the same whether your footage sits on internal storage (like the
+Neo) or an SD card (like a Mini or a Mavic). Either way the storage never fills
+up, so you never have to stop and clear it by hand.
 
-## Features
+## Which DJI devices work?
 
-- **Plug-and-go on three OSes.** Linux uses udev, macOS uses
-  DiskArbitration via a LaunchAgent, Windows uses a Scheduled Task running a
-  WMI watcher.
-- **Any rclone remote.** Pick during setup. Google Photos, Drive, Dropbox,
-  OneDrive, S3, your NAS — all the same code path.
-- **Per-recording-date albums.** Files are grouped by their on-card mtime,
-  so a single plug-in can produce multiple albums if the card spans dates.
-- **Resume-safe.** A `.uploaded` ledger per stage tracks exactly which
-  files have been uploaded. Re-running uploads nothing twice; an interrupted
-  upload picks up where it left off.
-- **Safe by default.** Out of the box it *never* deletes from your drone —
-  card-trimming is strictly opt-in, and even then only fires after a confirmed
-  upload. Local copies are sentinel-gated too: un-uploaded data is never pruned.
-- **Failure visibility.** Optional Telegram notifications for every stage,
-  with the last 25 log lines on failure.
+If your computer sees the device as a USB drive with a `DCIM` folder on it, this
+handles it. That's basically the whole lineup: the drones (Neo, Mini, Air,
+Mavic, Avata, FPV), the FPV **Goggles** (their recordings land in the same
+`DCIM` tree, and yes, it picks those up too), and the Osmo Action / Pocket
+cameras.
+
+Detection doesn't actually require it to be a DJI at all. It looks for DJI's USB
+vendor ID and the `DJI` / `DJIMEDIA` volume labels first, but the real backstop
+is just "is there a `DCIM` folder here?" — so new models tend to work on day one.
+
+One thing to watch: a few devices (some Osmo cameras) ask you to pick a mode when
+you plug them in. Choose **mass storage** / **USB drive**, not MTP. An MTP device
+doesn't mount as a drive, so nothing that watches for drives can see it.
+
+## What you get
+
+- **Plug and forget, on all three OSes.** Linux watches with udev, macOS with a
+  DiskArbitration agent, Windows with a Scheduled Task running a WMI watcher.
+  Install it once and you never launch it again.
+- **Your cloud, your choice.** Uploads go through rclone, so Google Drive,
+  Photos, Dropbox, OneDrive, S3, a NAS — whatever you already use. Setup just
+  asks which one.
+- **Sorted by the day you shot it.** Clips are grouped by recording date, so a
+  single plug-in can fill several folders (or albums) if the footage spans days.
+- **You can't upload the same clip twice.** Every batch keeps an `.uploaded`
+  ledger. Re-run it, unplug mid-upload, whatever — it resumes exactly where it
+  left off and never sends a file again.
+- **It won't delete your footage behind your back.** Out of the box it removes
+  nothing from the drone. Card-trimming is something you switch on during setup,
+  and even then it only runs once a clip is confirmed in the cloud.
+- **It tells you when something breaks.** Optional Telegram messages for each
+  stage, with the tail end of the log if a run fails.
 
 ## Quick start
 
