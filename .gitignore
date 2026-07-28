@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+.venv/
+venv/
+env/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Never commit user credentials, even if they wander into the repo by accident.
+credentials.toml
+*.local.toml
+.dji-auto-upload-test/

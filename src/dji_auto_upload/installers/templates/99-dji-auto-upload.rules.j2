@@ -1,0 +1,14 @@
+# dji-auto-upload — auto-trigger on DJI drone / DJI media plug-in.
+#
+# Dispatched via `systemd-run` (no --scope, with --collect) so the offload
+# script runs as a child of PID 1, escaping systemd-udevd's seccomp filter
+# (which blocks mount(2)) and udev's 180s event_timeout.
+
+{% for vid in vendor_ids -%}
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", ATTRS{idVendor}=="{{ vid }}", \
+    RUN+="/bin/systemd-run --no-block --collect --slice=dji-auto-upload.slice --unit=dji-auto-upload-%k {{ binary }} run --device /dev/%k"
+{% endfor %}
+{% for label in labels -%}
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}=="{{ label }}", \
+    RUN+="/bin/systemd-run --no-block --collect --slice=dji-auto-upload.slice --unit=dji-auto-upload-%k {{ binary }} run --device /dev/%k"
+{% endfor %}
