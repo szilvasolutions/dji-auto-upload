@@ -32,7 +32,7 @@ cameras.
 
 Detection doesn't actually require it to be a DJI at all. It looks for DJI's USB
 vendor ID and the `DJI` / `DJIMEDIA` volume labels first, but the real backstop
-is just "is there a `DCIM` folder here?" — so new models tend to work on day one.
+is just "is there a `DCIM` folder here?", so new models tend to work on day one.
 
 One thing to watch: a few devices (some Osmo cameras) ask you to pick a mode when
 you plug them in. Choose **mass storage** / **USB drive**, not MTP. An MTP device
@@ -44,12 +44,12 @@ doesn't mount as a drive, so nothing that watches for drives can see it.
   DiskArbitration agent, Windows with a Scheduled Task running a WMI watcher.
   Install it once and you never launch it again.
 - **Your cloud, your choice.** Uploads go through rclone, so Google Drive,
-  Photos, Dropbox, OneDrive, S3, a NAS — whatever you already use. Setup just
+  Photos, Dropbox, OneDrive, S3, a NAS, whatever you already use. Setup just
   asks which one.
 - **Sorted by the day you shot it.** Clips are grouped by recording date, so a
   single plug-in can fill several folders (or albums) if the footage spans days.
 - **You can't upload the same clip twice.** Every batch keeps an `.uploaded`
-  ledger. Re-run it, unplug mid-upload, whatever — it resumes exactly where it
+  ledger. Re-run it, unplug mid-upload, whatever; it resumes exactly where it
   left off and never sends a file again.
 - **It won't delete your footage behind your back.** Out of the box it removes
   nothing from the drone. Card-trimming is something you switch on during setup,
@@ -69,7 +69,7 @@ Plug in your drone. That's it.
 
 ## Setting up rclone
 
-dji-auto-upload doesn't lock you into one cloud — it uploads through
+dji-auto-upload doesn't lock you into one cloud. It uploads through
 [rclone](https://rclone.org), which speaks **Google Drive, Dropbox, OneDrive,
 Google Photos, Amazon S3, Backblaze B2, a NAS over SFTP/SMB, and ~70 other
 backends**. You pick the one you want; `dji-auto-upload setup` just asks for the
@@ -83,15 +83,15 @@ remote's name.
 | Windows | `winget install Rclone.Rclone` |
 | Linux | `curl https://rclone.org/install.sh \| sudo bash` |
 
-**Easy path — Drive / Dropbox / OneDrive / S3 / NAS.** Run `rclone config`,
+**Easy path (Drive / Dropbox / OneDrive / S3 / NAS).** Run `rclone config`,
 choose "New remote", pick your provider, and follow the prompts. For the big
-consumer clouds it's a single browser sign-in — click *Allow* and you're done.
+consumer clouds it's a single browser sign-in. Click *Allow* and you're done.
 Give the remote a name (e.g. `gdrive`) and use that name in setup. In the
 config, a path template like `DJI/{date}` files each day's clips into its own
 folder.
 
 <details>
-<summary><b>Advanced path — Google Photos (extra step, worth knowing)</b></summary>
+<summary><b>Advanced path: Google Photos (extra step, worth knowing)</b></summary>
 
 Google Photos works, but rclone's shared OAuth client is rate-limited to
 **~10 GB/day**. For your own quota you need your own OAuth client:
@@ -125,7 +125,7 @@ sudo dji-auto-upload install-trigger    # writes /etc/udev/rules.d/99-dji-auto-u
 ```
 
 The trigger uses `systemd-run` (no `--scope`, with `--collect`) so the
-offload runs as a child of PID 1 — escaping `systemd-udevd`'s seccomp filter,
+offload runs as a child of PID 1, which escapes `systemd-udevd`'s seccomp filter,
 which would otherwise block the `mount(2)` syscall. Logs land in `journalctl`.
 
 </details>
@@ -207,7 +207,7 @@ events  = ["start", "done_copy", "done_upload", "done", "fail"]
 Telegram credentials live in a separate `credentials.toml` (chmod 0600).
 `dji-auto-upload setup` walks you through getting a bot token from `@BotFather`
 and auto-discovers your chat ID by watching for the next message you send to
-your bot — no copy-pasting from `getUpdates` URLs.
+your bot, so there's no copy-pasting from `getUpdates` URLs.
 
 ## CLI
 
@@ -273,4 +273,4 @@ asserts ledger contents, file placement, and notifier event ordering.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
