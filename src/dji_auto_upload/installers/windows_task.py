@@ -96,15 +96,6 @@ def install(cfg: Config, *, force: bool = False) -> None:
     console.print(f"[green]Wrote[/green] {runner}")
 
     task_xml_path = watcher.with_name("DjiAutoUploadTask.xml")
-    task_xml_path.write_text(
-        _render(
-            "DjiAutoUploadTask.xml.j2",
-            powershell="powershell.exe",
-            watcher_path=str(watcher),
-            user=os.environ.get("USERNAME", ""),
-        ),
-        encoding="utf-16",
-    )
 
     if force:
         subprocess.run(
@@ -113,11 +104,35 @@ def install(cfg: Config, *, force: bool = False) -> None:
             text=True,
         )
 
-    proc = subprocess.run(
-        ["schtasks", "/create", "/tn", TASK_NAME, "/xml", str(task_xml_path), "/f"],
-        capture_output=True,
-        text=True,
-    )
+    # Try the self-healing version (a repetition that restarts a dead watcher),
+    # and fall back to the plain trigger if Task Scheduler's schema validator
+    # rejects it. A task without the repetition is far better than no task.
+    proc = None
+    for repeat in (True, False):
+        task_xml_path.write_text(
+            _render(
+                "DjiAutoUploadTask.xml.j2",
+                powershell="powershell.exe",
+                watcher_path=str(watcher),
+                user=os.environ.get("USERNAME", ""),
+                repeat=repeat,
+            ),
+            encoding="utf-16",
+        )
+        proc = subprocess.run(
+            ["schtasks", "/create", "/tn", TASK_NAME, "/xml", str(task_xml_path), "/f"],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0:
+            if not repeat:
+                console.print(
+                    "[yellow]Installed without the 5-minute self-restart[/yellow] "
+                    "(Task Scheduler rejected it); the watcher will still start at logon."
+                )
+            break
+
+    assert proc is not None
     if proc.returncode != 0:
         console.print(
             f"[red]schtasks /create failed (rc={proc.returncode}):[/red] {proc.stderr.strip()}"

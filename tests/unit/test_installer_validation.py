@@ -153,9 +153,10 @@ def test_runner_can_launch_via_interpreter_when_shim_is_off_path() -> None:
     assert "& 'C:\\Python312\\python.exe' '-m' 'dji_auto_upload' run --device $Drive" in ps
 
 
-def test_watcher_hands_off_to_the_visible_runner() -> None:
-    """The watcher must launch the runner in a VISIBLE window (the user asked to
-    SEE progress) and reference the rendered runner path, not a bare binary."""
+def test_watcher_polls_and_hands_off_to_the_visible_runner() -> None:
+    """Event-action registration failed three separate ways in the field
+    (function scope, $using:, then silent process death). The watcher must poll
+    instead, and launch the runner in a VISIBLE window."""
     from dji_auto_upload.installers.windows_task import _ps_single_quote, _render
 
     ps = _render(
@@ -164,6 +165,11 @@ def test_watcher_hands_off_to_the_visible_runner() -> None:
         vendor_ids=["2ca3"],
         labels=["DJI"],
     )
-    assert "$Global:DjiRunner" in ps
-    assert "-WindowStyle Normal" in ps
-    assert "dji-run.ps1" in ps
+    # No event registration anywhere in the executable body.
+    code = "\n".join(ln for ln in ps.splitlines() if not ln.strip().startswith("#"))
+    assert "Register-WmiEvent" not in code
+    assert "Get-ReadyRemovableDrives" in code
+    assert "-WindowStyle Normal" in code
+    assert "dji-run.ps1" in code
+    # And it must not reference the variable that was removed with the split.
+    assert "DjiBinary" not in ps

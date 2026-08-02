@@ -1,85 +1,130 @@
-# dji-auto-upload Windows watcher — runs as a Scheduled Task at user logon.
-# Subscribes to Win32_VolumeChangeEvent and triggers `dji-auto-upload run` for
-# DJI volumes (DCIM-folder match or vendor-ID match).
+# dji-auto-upload Windows watcher — runs as a Scheduled Task at logon.
 #
-# SCOPE: a Register-WmiEvent -Action scriptblock does NOT see this script's
-# variables or functions, and `$using:` is only valid for Invoke-Command /
-# Start-Job / ForEach-Object -Parallel — not for event actions. Event actions
-# do run against global scope, so everything the action needs is defined with
-# an explicit `Global:` prefix below.
+# Polls for newly-arrived removable drives and starts an offload when one looks
+# like a DJI device.
+#
+# Why polling and not Register-WmiEvent: the event-action approach failed three
+# separate ways in practice. An -Action scriptblock cannot see the script's own
+# functions or variables; `$using:` is not valid there either (only
+# Invoke-Command / Start-Job / ForEach-Object -Parallel); and the host process
+# died silently, leaving the task in Ready with no error anywhere. Every one of
+# those failures was invisible to the user. A three-second poll costs nothing
+# measurable, runs in one ordinary scope, and is trivial to reason about.
 
 $ErrorActionPreference = 'Continue'
 
-$Global:DjiVendorIds = @({% for v in vendor_ids %}'{{ v }}'{% if not loop.last %}, {% endif %}{% endfor %})
-$Global:DjiLabels    = @({% for l in labels %}'{{ l }}'{% if not loop.last %}, {% endif %}{% endfor %})
-# The runner script opens a visible console for the offload and reports the
-# outcome with a popup; the actual binary/interpreter details live in there.
-$Global:DjiRunner    = '{{ runner }}'
-$Global:DjiLogFile   = Join-Path $env:LOCALAPPDATA 'dji-auto-upload\watcher.log'
+$VendorIds  = @({% for v in vendor_ids %}'{{ v }}'{% if not loop.last %}, {% endif %}{% endfor %})
+$Labels     = @({% for l in labels %}'{{ l }}'{% if not loop.last %}, {% endif %}{% endfor %})
+$Runner     = '{{ runner }}'
+$LogFile    = Join-Path $env:LOCALAPPDATA 'dji-auto-upload\watcher.log'
+$PollSeconds = 3
 
-function Global:Write-DjiLog($message) {
-    # Without this the watcher fails completely silently, which is impossible
-    # to diagnose from the other side of a drone that "just didn't upload".
+function Write-DjiLog($message) {
+    # Silence is the enemy here: without a log, "nothing happened" is
+    # indistinguishable from "never ran".
     try {
-        $dir = Split-Path -Parent $Global:DjiLogFile
+        $dir = Split-Path -Parent $script:LogFile
         if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-        Add-Content -Path $Global:DjiLogFile -Value "$stamp  $message" -Encoding UTF8
-    } catch {}
+        Add-Content -Path $script:LogFile -Value "$stamp  $message" -Encoding UTF8
+    } catch { }
 }
 
-function Global:Test-DjiVolume($drive) {
-    if (Test-Path (Join-Path $drive 'DCIM')) {
-        $children = Get-ChildItem -Path (Join-Path $drive 'DCIM') -Directory -ErrorAction SilentlyContinue
-        if ($children) { return $true }
+function Get-ReadyRemovableDrives {
+    try {
+        [System.IO.DriveInfo]::GetDrives() |
+            Where-Object { $_.IsReady -and $_.DriveType -eq 'Removable' } |
+            ForEach-Object { $_.Name }   # e.g. "D:\"
+    } catch {
+        Write-DjiLog "ERROR enumerating drives: $_"
+        @()
     }
+}
+
+function Test-DjiVolume($drive) {
+    # The dependable signal across every DJI device: a DCIM folder with
+    # something in it. Label and vendor ID are nice-to-haves on top.
     try {
-        $vol = Get-Volume -DriveLetter $drive[0] -ErrorAction SilentlyContinue
-        if ($vol -and $Global:DjiLabels -contains $vol.FileSystemLabel) { return $true }
-    } catch {}
+        $dcim = Join-Path $drive 'DCIM'
+        if (Test-Path $dcim) {
+            if (Get-ChildItem -Path $dcim -Directory -ErrorAction SilentlyContinue) { return $true }
+        }
+    } catch { }
     try {
-        # Scope the vendor-ID check to THIS volume's own disk, so an unrelated
-        # DJI device already plugged in (mic, controller) can't make every
-        # newly inserted card look like a drone.
-        $partition = Get-Partition -DriveLetter $drive[0] -ErrorAction SilentlyContinue
-        if ($partition) {
-            $disk = Get-Disk -Number $partition.DiskNumber -ErrorAction SilentlyContinue
+        $letter = $drive.Substring(0, 1)
+        $vol = Get-Volume -DriveLetter $letter -ErrorAction SilentlyContinue
+        if ($vol -and $script:Labels -contains $vol.FileSystemLabel) { return $true }
+    } catch { }
+    try {
+        # Scope the vendor check to this volume's own disk, so an unrelated DJI
+        # device already attached can't make every inserted card look like one.
+        $letter = $drive.Substring(0, 1)
+        $part = Get-Partition -DriveLetter $letter -ErrorAction SilentlyContinue
+        if ($part) {
+            $disk = Get-Disk -Number $part.DiskNumber -ErrorAction SilentlyContinue
             foreach ($id in @($disk.Path, $disk.FriendlyName, $disk.SerialNumber)) {
                 if ($id -and $id -match 'VID_([0-9A-Fa-f]{4})') {
-                    if ($Global:DjiVendorIds -contains $matches[1].ToLower()) { return $true }
+                    if ($script:VendorIds -contains $matches[1].ToLower()) { return $true }
                 }
             }
         }
-    } catch {}
+    } catch { }
     return $false
 }
 
-Write-DjiLog "watcher started (binary: $Global:DjiBinary)"
-
-Register-WmiEvent -Class Win32_VolumeChangeEvent -SourceIdentifier DjiVolumeWatcher -Action {
+function Start-Offload($drive) {
+    Write-DjiLog "DJI volume detected at $drive - starting offload"
     try {
-        $eventType = $Event.SourceEventArgs.NewEvent.EventType
-        if ($eventType -ne 2) { return }   # 2 = arrival
+        Start-Process -FilePath 'powershell.exe' `
+                      -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass',
+                                      '-File', $script:Runner, '-Drive', $drive) `
+                      -WindowStyle Normal
+    } catch {
+        Write-DjiLog "ERROR launching runner: $_"
+    }
+}
 
-        # DriveName arrives as "E:" with no separator. "E:" is drive-RELATIVE in
-        # both PowerShell and Python, so normalise to "E:\" before using it.
-        $drive = $Event.SourceEventArgs.NewEvent.DriveName
-        if ($drive -match '^[A-Za-z]:$') { $drive = "$drive\" }
+Write-DjiLog "watcher started (runner: $Runner, poll: ${PollSeconds}s)"
 
-        Start-Sleep -Seconds 2
-        if (Test-DjiVolume $drive) {
-            Write-DjiLog "DJI volume detected at $drive — starting offload (visible window)"
-            # Visible on purpose: the user should SEE that something is happening.
-            Start-Process -FilePath 'powershell.exe' `
-                          -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass',
-                                          '-File', $Global:DjiRunner, '-Drive', $drive) `
-                          -WindowStyle Normal
-        } else {
-            Write-DjiLog "volume $drive arrived but is not a DJI volume — ignoring"
+# Anything already plugged in when we start counts as an arrival. Plugging the
+# drone in before installing is a normal thing to do, and previously meant
+# nothing happened until you unplugged and replugged it. Re-running an offload
+# is harmless: the ledger dedupes and a lock prevents overlapping runs.
+$seen = @{}
+$ticks = 0
+
+while ($true) {
+    try {
+        $current = @(Get-ReadyRemovableDrives)
+
+        foreach ($drive in $current) {
+            if (-not $seen.ContainsKey($drive)) {
+                $seen[$drive] = $true
+                if (Test-DjiVolume $drive) {
+                    Start-Offload $drive
+                } else {
+                    Write-DjiLog "volume $drive arrived but has no DCIM folder - ignoring"
+                }
+            }
+        }
+
+        # Forget drives that went away, so a replug triggers again.
+        foreach ($old in @($seen.Keys)) {
+            if ($current -notcontains $old) {
+                $seen.Remove($old)
+                Write-DjiLog "volume $old removed"
+            }
+        }
+
+        # Heartbeat roughly every 30 minutes, so the log proves it is alive.
+        $ticks++
+        if (($ticks * $PollSeconds) % 1800 -eq 0) {
+            Write-DjiLog "still watching (drives: $($current -join ', '))"
         }
     } catch {
-        Write-DjiLog "ERROR in volume handler: $_"
+        # Never let one bad iteration kill the watcher.
+        Write-DjiLog "ERROR in poll loop: $_"
     }
-} | Out-Null
 
-while ($true) { Start-Sleep -Seconds 3600 }
+    Start-Sleep -Seconds $PollSeconds
+}

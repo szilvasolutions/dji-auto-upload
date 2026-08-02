@@ -7,6 +7,17 @@
   <Triggers>
     <LogonTrigger>
       <Enabled>true</Enabled>
+{%- if repeat %}
+      <!-- Self-healing: if the watcher ever dies, this restarts it within five
+           minutes instead of leaving the task in Ready forever. The default
+           MultipleInstancesPolicy is IgnoreNew, so a repeat while it is alive
+           is a no-op. Repetition belongs to the base trigger type, so it must
+           precede UserId or the XSD rejects the document. -->
+      <Repetition>
+        <Interval>PT5M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+{%- endif %}
       <UserId>{{ user }}</UserId>
     </LogonTrigger>
   </Triggers>

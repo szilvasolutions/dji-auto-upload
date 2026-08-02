@@ -3,6 +3,29 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.2] - 2026-08-02
+
+### Fixed
+- The Windows watcher never triggered anything. It registered a
+  `Register-WmiEvent -Action` handler, and the host process then exited
+  silently, leaving the Scheduled Task in `Ready` with no error recorded
+  anywhere. That mechanism had already failed twice before for unrelated
+  reasons (an event action cannot see the script's functions or variables, and
+  `$using:` is not valid inside one), so it is gone. The watcher now polls for
+  newly-arrived removable drives every three seconds in a single ordinary
+  scope, wrapped so no single iteration can kill the loop.
+- A device already plugged in when the watcher starts now counts as an arrival.
+  Previously you had to unplug and replug after installing.
+- The startup log line printed an empty binary path; it reports the runner and
+  poll interval, and logs a heartbeat every 30 minutes so the log proves the
+  watcher is alive.
+
+### Added
+- The Scheduled Task repeats every 5 minutes, so a watcher that dies for any
+  reason restarts by itself rather than staying dead until the next logon.
+  If Task Scheduler rejects that XML, install falls back to the plain trigger
+  rather than leaving no task at all.
+
 ## [0.3.1] - 2026-08-02
 
 ### Fixed
@@ -175,6 +198,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.3.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.1.0...v0.2.0
