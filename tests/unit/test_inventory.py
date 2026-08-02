@@ -78,3 +78,37 @@ def test_inventory_end_to_end(tmp_path: Path) -> None:
     assert dcim == media
     assert list(groups.keys()) == [date(2026, 2, 1)]
     assert len(groups[date(2026, 2, 1)]) == 2
+
+
+def test_every_media_folder_is_found_not_just_the_first(tmp_path: Path) -> None:
+    """A camera rolls over to a new folder every 999 files. Returning only the
+    first would silently never upload the newer clips while the run still
+    reported success."""
+    from dji_auto_upload.inventory import find_dcim_dirs
+
+    for sub in ("100MEDIA", "101MEDIA", "102MEDIA"):
+        d = tmp_path / "DCIM" / sub
+        d.mkdir(parents=True)
+        (d / "DJI_0001.MP4").write_bytes(b"x")
+
+    found = find_dcim_dirs(tmp_path, ("100MEDIA", "DJI_001"))
+    assert [p.name for p in found] == ["100MEDIA", "101MEDIA", "102MEDIA"]
+
+
+def test_preferred_folder_is_listed_first(tmp_path: Path) -> None:
+    for sub in ("999OTHER", "DJI_001"):
+        d = tmp_path / "DCIM" / sub
+        d.mkdir(parents=True)
+        (d / "DJI_0001.MP4").write_bytes(b"x")
+
+    from dji_auto_upload.inventory import find_dcim_dirs
+
+    found = find_dcim_dirs(tmp_path, ("100MEDIA", "DJI_001"))
+    assert found[0].name == "DJI_001"
+    assert {p.name for p in found} == {"DJI_001", "999OTHER"}
+
+
+def test_no_dcim_at_all_returns_nothing(tmp_path: Path) -> None:
+    from dji_auto_upload.inventory import find_dcim_dirs
+
+    assert find_dcim_dirs(tmp_path, ("100MEDIA",)) == []

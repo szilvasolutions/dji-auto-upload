@@ -47,6 +47,10 @@ class OffloadRun:
     dcim: Path
     dry_run: bool = False
 
+    # Every media folder on the card. Defaults to [dcim] so existing callers
+    # keep working; the CLI passes the full list from find_dcim_dirs().
+    dcim_dirs: list[Path] | None = None
+
     stage_base: Path = field(init=False)
     new_files_by_date: dict[date, list[FileInfo]] = field(init=False, default_factory=dict)
     total_new_count: int = 0
@@ -55,6 +59,8 @@ class OffloadRun:
 
     def __post_init__(self) -> None:
         self.stage_base = self.config.paths.stage_dir
+        if not self.dcim_dirs:
+            self.dcim_dirs = [self.dcim]
 
     # ---- Public API ----------------------------------------------------
 
@@ -86,8 +92,11 @@ class OffloadRun:
     # ---- Stages --------------------------------------------------------
 
     def _inventory(self) -> None:
-        log.info("stage=inventory dcim=%s", self.dcim)
-        all_files = walk_dcim(self.dcim, self.config.detect.extensions)
+        dirs = self.dcim_dirs or [self.dcim]
+        log.info("stage=inventory dcim=%s", ", ".join(str(p) for p in dirs))
+        all_files: list[FileInfo] = []
+        for media_dir in dirs:
+            all_files.extend(walk_dcim(media_dir, self.config.detect.extensions))
         if not all_files:
             # An empty card is the normal state after a successful offload with
             # drone cleanup on — not a failure. Carry on so any still-pending
@@ -304,7 +313,9 @@ class OffloadRun:
         if days <= 0:
             return
         log.info("stage=cleanup_drone")
-        candidates = files_older_than(self.dcim, days)
+        candidates = [
+            f for d in (self.dcim_dirs or [self.dcim]) for f in files_older_than(d, days)
+        ]
         if not candidates:
             self.notifier.send(
                 "cleanup", f"🧹 No files older than {days} day(s) on drone."
@@ -354,11 +365,14 @@ class OffloadRun:
         self.notifier.send("cleanup", msg)
 
     def _all_drone_files(self) -> list[Path]:
-        """Every file in the drone's media folder, regardless of extension."""
-        try:
-            return [f for f in self.dcim.iterdir() if f.is_file()]
-        except OSError:
-            return []
+        """Every file in every media folder on the card, regardless of extension."""
+        out: list[Path] = []
+        for d in self.dcim_dirs or [self.dcim]:
+            try:
+                out.extend(f for f in d.iterdir() if f.is_file())
+            except OSError:
+                continue
+        return out
 
     def _ledgered_basenames(self) -> set[str]:
         """Union of every stage dir's .uploaded ledger."""

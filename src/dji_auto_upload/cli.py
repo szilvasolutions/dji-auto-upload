@@ -352,7 +352,7 @@ def run(
 def _run_inner(cfg: Config, notifier: Notifier, device: str | None, *, dry_run: bool = False) -> None:
     from .detect import describe_volume, find_dji_volume, has_dji_dcim, is_dji_volume
     from .errors import DetectError, MountError
-    from .inventory import find_dcim
+    from .inventory import find_dcim_dirs
     from .offload import OffloadRun
     from .platform_glue import resolve_volume
 
@@ -384,12 +384,20 @@ def _run_inner(cfg: Config, notifier: Notifier, device: str | None, *, dry_run: 
             f"{volume_path} doesn't look like a DJI media volume (no DCIM with expected layout)"
         )
 
-    dcim = find_dcim(volume_path, cfg.detect.dcim_subdirs)
-    if dcim is None:
+    dcim_dirs = find_dcim_dirs(volume_path, cfg.detect.dcim_subdirs)
+    if not dcim_dirs:
         raise DetectError(f"could not locate a DCIM folder under {volume_path}")
+    if len(dcim_dirs) > 1:
+        log.info("found %d media folders: %s", len(dcim_dirs),
+                 ", ".join(d.name for d in dcim_dirs))
 
     OffloadRun(
-        config=cfg, notifier=notifier, volume=volume_path, dcim=dcim, dry_run=dry_run
+        config=cfg,
+        notifier=notifier,
+        volume=volume_path,
+        dcim=dcim_dirs[0],
+        dcim_dirs=dcim_dirs,
+        dry_run=dry_run,
     ).execute()
 
 

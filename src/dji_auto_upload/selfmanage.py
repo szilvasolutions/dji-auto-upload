@@ -27,9 +27,9 @@ from .stage import existing_stage_dirs
 
 console = Console()
 
-DEFAULT_SOURCE = (
-    "https://github.com/szilvasolutions/dji-auto-upload/archive/refs/heads/main.zip"
-)
+# Now on PyPI, so pip can compare versions properly and skip when there is
+# nothing new — no more force-reinstalling a branch archive on every check.
+DEFAULT_SOURCE = "dji-auto-upload"
 
 
 def is_versioned_source(source: str) -> bool:

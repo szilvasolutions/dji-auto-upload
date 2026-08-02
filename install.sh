@@ -14,7 +14,7 @@ set -euo pipefail
 # otherwise a command that reads stdin could eat the rest of the script.
 main() {
     step() { printf '\033[36m==> %s\033[0m\n' "$*"; }
-    local ZIP_URL="https://github.com/szilvasolutions/dji-auto-upload/archive/refs/heads/main.zip"
+    local PKG="dji-auto-upload"
 
     echo
     echo "dji-auto-upload installer"
@@ -54,17 +54,9 @@ main() {
     # Newer distros mark the system Python "externally managed" (PEP 668) and
     # refuse --user installs without an explicit override. Try the polite way
     # first; the override only touches ~/.local, never system site-packages.
-    local PIP_EXTRA=""
-    if ! python3 -m pip install --user --upgrade --quiet "$ZIP_URL" 2>/dev/null; then
-        PIP_EXTRA="--break-system-packages"
-        python3 -m pip install --user --upgrade --quiet $PIP_EXTRA "$ZIP_URL"
+    if ! python3 -m pip install --user --upgrade --quiet "$PKG" 2>/dev/null; then
+        python3 -m pip install --user --upgrade --quiet --break-system-packages "$PKG"
     fi
-    # Force the package itself: branch builds share a version string, so the
-    # --upgrade above resolves as "already satisfied" and installs nothing on
-    # every run after the first, leaving stale code behind.
-    # shellcheck disable=SC2086
-    python3 -m pip install --user --force-reinstall --no-deps --no-cache-dir \
-        --quiet $PIP_EXTRA "$ZIP_URL"
 
     # --- Setup wizard -----------------------------------------------------------
     step "Starting setup (the wizard also offers to install the plug-in trigger)"

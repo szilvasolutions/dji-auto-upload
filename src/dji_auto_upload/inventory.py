@@ -30,24 +30,53 @@ class FileInfo:
 
 
 def find_dcim(volume: Path, dcim_subdirs: tuple[str, ...]) -> Path | None:
-    """Return the DCIM subfolder that holds the actual media, or None."""
+    """Return the primary DCIM subfolder that holds media, or None.
+
+    Kept for callers that want a single representative folder; use
+    `find_dcim_dirs` to actually offload, or footage in the later folders is
+    silently left behind.
+    """
+    dirs = find_dcim_dirs(volume, dcim_subdirs)
+    return dirs[0] if dirs else None
+
+
+def find_dcim_dirs(volume: Path, dcim_subdirs: tuple[str, ...]) -> list[Path]:
+    """Every DCIM subfolder holding media, preferred names first.
+
+    A camera rolls over to a new folder every 999 files — 100MEDIA, 101MEDIA,
+    102MEDIA — and goggles in particular tend to accumulate several. Returning
+    only the first would silently never upload the newer footage while the run
+    still reported success.
+    """
     dcim_root = volume / "DCIM"
     if not dcim_root.is_dir():
-        return None
+        return []
 
-    # Prefer known subdirs in declared order.
-    for sub in dcim_subdirs:
-        cand = dcim_root / sub
-        if cand.is_dir():
-            return cand
+    try:
+        children = sorted(c for c in dcim_root.iterdir() if c.is_dir())
+    except OSError:
+        return []
 
-    # Fallback: first subdirectory under DCIM.
-    for child in sorted(dcim_root.iterdir()):
-        if child.is_dir():
-            return child
+    # Preferred names first (in declared order), then everything else by name,
+    # so the "primary" folder stays predictable for messages and tests.
+    preferred = [dcim_root / s for s in dcim_subdirs if (dcim_root / s).is_dir()]
+    rest = [c for c in children if c not in preferred]
+    ordered = preferred + rest
 
-    # Last resort: DCIM itself, if it has files directly.
-    return dcim_root
+    with_media = [d for d in ordered if _has_any_file(d)]
+    if with_media:
+        return with_media
+    if ordered:
+        return ordered  # empty folders: nothing to copy, but a valid layout
+    # Last resort: DCIM itself, if it holds files directly.
+    return [dcim_root] if _has_any_file(dcim_root) else []
+
+
+def _has_any_file(d: Path) -> bool:
+    try:
+        return any(f.is_file() for f in d.iterdir())
+    except OSError:
+        return False
 
 
 def walk_dcim(dcim: Path, extensions: tuple[str, ...]) -> list[FileInfo]:

@@ -92,7 +92,7 @@ Answer the questions, plug in your drone. That's it.
 <summary><b>Prefer to install by hand?</b></summary>
 
 ```bash
-pip install https://github.com/szilvasolutions/dji-auto-upload/archive/refs/heads/main.zip
+pip install dji-auto-upload
 dji-auto-upload setup            # interactive: rclone remote, retention, optional Telegram
 dji-auto-upload install-trigger  # OS-specific auto-trigger (sudo on Linux)
 ```
@@ -159,7 +159,7 @@ one most people should pick.
 Requires `rclone` and `udev` (already on every desktop distro).
 
 ```bash
-pip install https://github.com/szilvasolutions/dji-auto-upload/archive/refs/heads/main.zip
+pip install dji-auto-upload
 dji-auto-upload setup
 sudo dji-auto-upload install-trigger    # writes /etc/udev/rules.d/99-dji-auto-upload.rules
 ```
@@ -183,7 +183,7 @@ Requires `rclone`. Install via Homebrew if needed:
 
 ```bash
 brew install rclone
-pip install https://github.com/szilvasolutions/dji-auto-upload/archive/refs/heads/main.zip
+pip install dji-auto-upload
 dji-auto-upload setup
 dji-auto-upload install-trigger    # writes ~/Library/LaunchAgents/com.dji-auto-upload.watcher.plist
 ```
@@ -204,7 +204,7 @@ Install rclone via winget:
 
 ```powershell
 winget install Rclone.Rclone
-pip install https://github.com/szilvasolutions/dji-auto-upload/archive/refs/heads/main.zip
+pip install dji-auto-upload
 dji-auto-upload setup
 dji-auto-upload install-trigger
 ```

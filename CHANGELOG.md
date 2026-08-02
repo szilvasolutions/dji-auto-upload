@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.1] - 2026-08-02
+
+### Fixed
+- Only the first `DCIM` subfolder was ever offloaded. A camera starts a new
+  folder every 999 files (`100MEDIA`, `101MEDIA`, …) and goggles accumulate
+  several, so everything past the first was silently never uploaded while the
+  run still reported success. Copy *and* drone cleanup now cover every media
+  folder on the card.
+
 ## [0.3.0] - 2026-08-02
 
 ### Added
@@ -166,6 +175,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.3.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/szilvasolutions/dji-auto-upload/releases/tag/v0.1.0
