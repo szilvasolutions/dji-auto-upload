@@ -1,6 +1,6 @@
 # dji-auto-upload
 
-> Plug in your DJI drone. Walk away. Footage shows up in the cloud.
+> Plug in your DJI drone. Walk away. Footage shows up in your cloud.
 
 [![CI](https://github.com/szilvasolutions/dji-auto-upload/actions/workflows/ci.yml/badge.svg)](https://github.com/szilvasolutions/dji-auto-upload/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
