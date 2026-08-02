@@ -15,6 +15,7 @@ import atexit
 import contextlib
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -32,6 +33,12 @@ _MOUNTS_TO_RELEASE: list[Path] = []
 
 def resolve_volume(device: str, cfg: Config) -> Path:
     """Turn a --device argument into a mountpoint Path."""
+    # "E:" is drive-RELATIVE on Windows (Path("E:") / "DCIM" == "E:DCIM", resolved
+    # against that drive's current directory), and the WMI watcher reports drives
+    # in exactly that form. Normalise to the volume root before anything uses it.
+    if re.fullmatch(r"[A-Za-z]:", device):
+        device = device + "\\"
+
     p = Path(device)
 
     if sys.platform.startswith("linux") and device.startswith("/dev/"):
@@ -126,8 +133,12 @@ def eject_volume(volume: Path) -> bool:
             )
             return proc.returncode == 0
         # Linux: unmount our own mounts now instead of waiting for atexit.
+        # Only claim success if there was actually something of ours to release —
+        # for a desktop-automounted card we haven't ejected anything, and telling
+        # the user "safe to unplug" while it's still mounted risks their data.
+        had_mounts = bool(_MOUNTS_TO_RELEASE)
         release_mounts()
-        return True
+        return had_mounts and not _MOUNTS_TO_RELEASE
     except Exception as exc:  # never let eject failure tank a finished run
         log.warning("eject %s failed: %s", volume, exc)
         return False
@@ -173,6 +184,9 @@ def inhibit_sleep(*, enabled: bool = True, reason: str = _INHIBIT_REASON) -> Ite
             )
             how = "caffeinate" if release else None
         else:
+            # Bind the helper's lifetime to ours. A bare `sleep N` would outlive
+            # a SIGKILLed run, reparent to PID 1, and keep the machine awake for
+            # the rest of that sleep — caffeinate gets this via -w, so match it.
             release = _spawn_inhibitor(
                 [
                     "systemd-inhibit",
@@ -180,8 +194,9 @@ def inhibit_sleep(*, enabled: bool = True, reason: str = _INHIBIT_REASON) -> Ite
                     "--who=dji-auto-upload",
                     f"--why={reason}",
                     "--mode=block",
-                    "sleep",
-                    "86400",
+                    "sh",
+                    "-c",
+                    f'while kill -0 {os.getpid()} 2>/dev/null; do sleep 5; done',
                 ]
             )
             how = "systemd-inhibit" if release else None

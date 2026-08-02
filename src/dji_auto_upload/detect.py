@@ -69,6 +69,22 @@ def find_dji_volume(cfg: DetectConfig) -> VolumeInfo | None:
     return None
 
 
+def describe_volume(mountpoint: Path) -> VolumeInfo:
+    """Best-effort label/vendor for a volume we were handed directly.
+
+    The auto-triggers all invoke `run --device <volume>`, so without this the
+    `strict_detect` opt-out would never apply to the path that actually matters.
+    """
+    if sys.platform == "win32":
+        return VolumeInfo(mountpoint=mountpoint, label=_windows_volume_label(mountpoint))
+    if sys.platform == "darwin":
+        return VolumeInfo(mountpoint=mountpoint, label=mountpoint.name)
+    for v in _enumerate_linux():
+        if v.mountpoint == mountpoint:
+            return v
+    return VolumeInfo(mountpoint=mountpoint, label=mountpoint.name)
+
+
 def _enumerate_linux() -> list[VolumeInfo]:
     """Use lsblk to find mounted block devices with their label + vendor."""
     if not shutil.which("lsblk"):

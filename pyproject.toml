@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dji-auto-upload"
-version = "0.1.0"
+version = "0.2.0"
 description = "Plug in your DJI drone. Walk away. Footage shows up in the cloud."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -56,10 +56,10 @@ Issues = "https://github.com/szilvasolutions/dji-auto-upload/issues"
 dji-auto-upload = "dji_auto_upload.cli:main"
 
 [tool.hatch.build.targets.wheel]
+# `packages` already ships everything under the package dir, templates included.
+# Do not add a force-include for installers/templates: hatchling then tries to
+# add each .j2 twice and hard-fails the wheel build.
 packages = ["src/dji_auto_upload"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/dji_auto_upload/installers/templates" = "dji_auto_upload/installers/templates"
 
 [tool.ruff]
 line-length = 100

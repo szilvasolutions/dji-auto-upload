@@ -50,3 +50,12 @@ def test_files_needing_upload_excludes_uploaded_and_hidden(tmp_path: Path) -> No
     append_to_ledger(tmp_path, ["a.mp4"])
     pending = files_needing_upload(tmp_path)
     assert pending == ["b.mp4", "c.mp4"]
+
+
+def test_part_files_are_never_uploaded(tmp_path: Path) -> None:
+    """A .part left by a killed run is truncated; uploading it would put a
+    corrupt clip in the album under a name the ledger then marks as done."""
+    (tmp_path / "DJI_001.MP4").write_bytes(b"complete")
+    (tmp_path / "DJI_002.MP4.part").write_bytes(b"trunc")
+
+    assert files_needing_upload(tmp_path) == ["DJI_001.MP4"]

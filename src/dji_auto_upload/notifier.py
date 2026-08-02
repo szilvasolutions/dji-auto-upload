@@ -42,9 +42,21 @@ class NullNotifier:
 
 class TelegramNotifier:
     def __init__(self, bot_token: str, chat_id: str, enabled_events: set[str]) -> None:
+        self._token = bot_token
         self._url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
         self._chat_id = chat_id
         self._enabled = enabled_events
+
+    def _redact(self, text: str) -> str:
+        """Strip the bot token out of anything we are about to log.
+
+        requests puts the full request URL in its exception strings, and that
+        URL embeds the token. Those log lines are world-readable and get tailed
+        into the `fail` notification, so an unredacted token would leak twice.
+        """
+        if self._token:
+            text = text.replace(self._token, "<redacted>")
+        return text
 
     def send(self, event: str, message: str) -> None:
         if event not in self._enabled:
@@ -58,9 +70,13 @@ class TelegramNotifier:
         try:
             r = requests.post(self._url, data=payload, timeout=10)
             if not r.ok:
-                log.warning("telegram send failed: HTTP %s — %s", r.status_code, r.text[:200])
+                log.warning(
+                    "telegram send failed: HTTP %s — %s",
+                    r.status_code,
+                    self._redact(r.text[:200]),
+                )
         except requests.RequestException as exc:
-            log.warning("telegram send failed: %s", exc)
+            log.warning("telegram send failed: %s", self._redact(str(exc)))
 
 
 def make_notifier(config: Config) -> Notifier:

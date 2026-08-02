@@ -3,7 +3,7 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.2.0] - 2026-08-02
 
 ### Added
 - Sleep inhibition while a run is in progress, so an idle laptop no longer
@@ -16,11 +16,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   safe to resume from.
 
 ### Fixed
-- Windows auto-trigger never fired: the `Register-WmiEvent` action scriptblock ran
-  in its own scope, so the `Test-DjiVolume` function and the vendor-ID/label config
-  it relied on were undefined at event time (the error was swallowed by
-  `$ErrorActionPreference = 'Continue'`). Detection is now inlined in the action
-  block and the config is passed in via `$using:`.
+- **The published package could not be installed at all.** A redundant
+  `force-include` for the installer templates made hatchling add every `.j2`
+  twice and abort the wheel build. CI only ever did an editable install, so
+  nothing caught it; it now builds the wheel, installs it, and asserts the
+  templates ship.
+- Windows auto-trigger never fired: the `Register-WmiEvent` action scriptblock
+  runs in its own scope, so the `Test-DjiVolume` function and the
+  vendor-ID/label config were undefined at event time, and the error was
+  swallowed by `$ErrorActionPreference = 'Continue'`. `$using:` is not valid in
+  an event action either (only `Invoke-Command` / `Start-Job` /
+  `ForEach-Object -Parallel`), so the watcher now defines everything the action
+  needs in global scope. It also logs to
+  `%LOCALAPPDATA%\dji-auto-upload\watcher.log`, so a failure is visible instead
+  of silent.
+- The Linux auto-trigger read a different config than `setup` wrote. udev runs
+  the offload as root, which resolves to `/etc/dji-auto-upload`, while
+  `dji-auto-upload setup` writes to `~/.config/dji-auto-upload`. The trigger
+  silently fell back to built-in defaults (wrong remote, no credentials, no
+  notifications). `install-trigger` now pins the rule to the invoking user's
+  config dir with `--config`, and says so; if it can't find one it warns instead
+  of installing a trigger that quietly does nothing.
+- The Telegram bot token was written to the log file. `requests` embeds the
+  request URL — which contains the token — in its exception strings, and those
+  log lines are also tailed into the `fail` notification. The token is now
+  redacted before anything is logged.
+- The Windows watcher reported drives as `E:`, which is drive-*relative*:
+  `Path("E:") / "DCIM"` resolves against that drive's current directory rather
+  than its root. Bare drive letters are now normalised to `E:\`.
+- `.part` copy temporaries left behind by a killed run were treated as
+  uploadable, which could put a truncated clip in the album and then ledger it
+  as complete. They are now skipped.
+- `strict_detect` was ignored whenever a volume was passed with `--device` —
+  which is how every auto-trigger invokes the run, so the setting had no effect
+  on the path it was written for.
+- On Linux, a finished run claimed "drone ejected, safe to unplug" even when it
+  had not unmounted anything (an automounted card is not ours to release).
+- The Linux sleep inhibitor could outlive a killed run. The helper held a bare
+  `sleep 86400`, so a SIGKILLed run left the machine unable to idle-suspend for
+  a day; it is now bound to the run's pid, matching `caffeinate -w`.
 - `uninstall-trigger` raised on the wrong OS (e.g. calling the Linux uninstaller on
   Windows hit `os.geteuid`, which doesn't exist there). It now no-ops with a clear
   message, matching `install-trigger`.
@@ -75,3 +109,6 @@ Initial public release.
 - Stage dirs with pending uploads could be pruned once the sentinel aged out.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
+
+[0.2.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/szilvasolutions/dji-auto-upload/releases/tag/v0.1.0

@@ -206,7 +206,7 @@ def run(
 
 
 def _run_inner(cfg: Config, notifier: Notifier, device: str | None, *, dry_run: bool = False) -> None:
-    from .detect import find_dji_volume, has_dji_dcim
+    from .detect import describe_volume, find_dji_volume, has_dji_dcim, is_dji_volume
     from .errors import DetectError, MountError
     from .inventory import find_dcim
     from .offload import OffloadRun
@@ -222,6 +222,18 @@ def _run_inner(cfg: Config, notifier: Notifier, device: str | None, *, dry_run: 
 
     if not volume_path or not volume_path.exists():
         raise MountError(f"{volume_path} is not accessible")
+
+    # The triggers hand us --device, so strict_detect has to be enforced here too
+    # or "only ever touch real DJI volumes" would not hold for the automatic path.
+    if (
+        device is not None
+        and cfg.detect.strict_detect
+        and not is_dji_volume(describe_volume(volume_path), cfg.detect)
+    ):
+        raise DetectError(
+            f"{volume_path} is not a DJI volume by vendor ID or label, and "
+            "strict_detect is on — refusing to offload it"
+        )
 
     if not has_dji_dcim(volume_path, cfg.detect.dcim_subdirs):
         raise DetectError(

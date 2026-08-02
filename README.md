@@ -140,6 +140,12 @@ The trigger uses `systemd-run` (no `--scope`, with `--collect`) so the
 offload runs as a child of PID 1, which escapes `systemd-udevd`'s seccomp filter,
 which would otherwise block the `mount(2)` syscall. Logs land in `journalctl`.
 
+Run `setup` as your normal user (not with `sudo`) so the config lands in your
+home directory. `install-trigger` then pins the udev rule to that config with
+`--config` and tells you which file it will use; without that the triggered run
+would execute as root, read `/etc/dji-auto-upload/`, and silently fall back to
+defaults. It also means rclone uses *your* `rclone.conf`.
+
 </details>
 
 <details>

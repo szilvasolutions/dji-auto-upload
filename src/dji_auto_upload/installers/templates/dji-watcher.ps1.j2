@@ -1,52 +1,80 @@
 # dji-auto-upload Windows watcher — runs as a Scheduled Task at user logon.
 # Subscribes to Win32_VolumeChangeEvent and triggers `dji-auto-upload run` for
 # DJI volumes (DCIM-folder match or vendor-ID match).
+#
+# SCOPE: a Register-WmiEvent -Action scriptblock does NOT see this script's
+# variables or functions, and `$using:` is only valid for Invoke-Command /
+# Start-Job / ForEach-Object -Parallel — not for event actions. Event actions
+# do run against global scope, so everything the action needs is defined with
+# an explicit `Global:` prefix below.
 
 $ErrorActionPreference = 'Continue'
-$VendorIds = @({% for v in vendor_ids %}'{{ v }}'{% if not loop.last %}, {% endif %}{% endfor %})
-$Labels    = @({% for l in labels %}'{{ l }}'{% if not loop.last %}, {% endif %}{% endfor %})
-$Binary    = '{{ binary }}'
 
-# NOTE: a Register-WmiEvent -Action scriptblock runs in its own scope. It cannot
-# see functions or variables from this script; only values imported with $using:
-# cross in, and $using: does not work for functions. So the detection logic is
-# inlined below and the config is pulled in via $using:VendorIds/$using:Labels.
+$Global:DjiVendorIds = @({% for v in vendor_ids %}'{{ v }}'{% if not loop.last %}, {% endif %}{% endfor %})
+$Global:DjiLabels    = @({% for l in labels %}'{{ l }}'{% if not loop.last %}, {% endif %}{% endfor %})
+$Global:DjiBinary    = '{{ binary }}'
+$Global:DjiLogFile   = Join-Path $env:LOCALAPPDATA 'dji-auto-upload\watcher.log'
 
-Register-WmiEvent -Class Win32_VolumeChangeEvent -SourceIdentifier DjiVolumeWatcher -Action {
-    $eventType = $Event.SourceEventArgs.NewEvent.EventType
-    if ($eventType -ne 2) { return }   # 2 = arrival
-    $drive     = $Event.SourceEventArgs.NewEvent.DriveName
-    $vendorIds = $using:VendorIds
-    $labels    = $using:Labels
-    $binary    = $using:Binary
-    Start-Sleep -Seconds 2
+function Global:Write-DjiLog($message) {
+    # Without this the watcher fails completely silently, which is impossible
+    # to diagnose from the other side of a drone that "just didn't upload".
+    try {
+        $dir = Split-Path -Parent $Global:DjiLogFile
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+        Add-Content -Path $Global:DjiLogFile -Value "$stamp  $message" -Encoding UTF8
+    } catch {}
+}
 
-    $isDji = $false
-    if (Test-Path "$drive\DCIM") {
-        $children = Get-ChildItem -Path "$drive\DCIM" -Directory -ErrorAction SilentlyContinue
-        if ($children) { $isDji = $true }
+function Global:Test-DjiVolume($drive) {
+    if (Test-Path (Join-Path $drive 'DCIM')) {
+        $children = Get-ChildItem -Path (Join-Path $drive 'DCIM') -Directory -ErrorAction SilentlyContinue
+        if ($children) { return $true }
     }
-    if (-not $isDji) {
-        try {
-            $vol = Get-Volume -DriveLetter ($drive[0]) -ErrorAction SilentlyContinue
-            if ($vol -and $labels -contains $vol.FileSystemLabel) { $isDji = $true }
-        } catch {}
-    }
-    if (-not $isDji) {
-        try {
-            $devices = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
-                       Where-Object { $_.InstanceId -match 'USB.*VID_([0-9A-Fa-f]{4})' }
-            foreach ($d in $devices) {
-                if ($d.InstanceId -match 'VID_([0-9A-Fa-f]{4})') {
-                    $vid = $matches[1].ToLower()
-                    if ($vendorIds -contains $vid) { $isDji = $true; break }
+    try {
+        $vol = Get-Volume -DriveLetter $drive[0] -ErrorAction SilentlyContinue
+        if ($vol -and $Global:DjiLabels -contains $vol.FileSystemLabel) { return $true }
+    } catch {}
+    try {
+        # Scope the vendor-ID check to THIS volume's own disk, so an unrelated
+        # DJI device already plugged in (mic, controller) can't make every
+        # newly inserted card look like a drone.
+        $partition = Get-Partition -DriveLetter $drive[0] -ErrorAction SilentlyContinue
+        if ($partition) {
+            $disk = Get-Disk -Number $partition.DiskNumber -ErrorAction SilentlyContinue
+            foreach ($id in @($disk.Path, $disk.FriendlyName, $disk.SerialNumber)) {
+                if ($id -and $id -match 'VID_([0-9A-Fa-f]{4})') {
+                    if ($Global:DjiVendorIds -contains $matches[1].ToLower()) { return $true }
                 }
             }
-        } catch {}
-    }
+        }
+    } catch {}
+    return $false
+}
 
-    if ($isDji) {
-        Start-Process $binary -ArgumentList 'run','--device',$drive -WindowStyle Hidden
+Write-DjiLog "watcher started (binary: $Global:DjiBinary)"
+
+Register-WmiEvent -Class Win32_VolumeChangeEvent -SourceIdentifier DjiVolumeWatcher -Action {
+    try {
+        $eventType = $Event.SourceEventArgs.NewEvent.EventType
+        if ($eventType -ne 2) { return }   # 2 = arrival
+
+        # DriveName arrives as "E:" with no separator. "E:" is drive-RELATIVE in
+        # both PowerShell and Python, so normalise to "E:\" before using it.
+        $drive = $Event.SourceEventArgs.NewEvent.DriveName
+        if ($drive -match '^[A-Za-z]:$') { $drive = "$drive\" }
+
+        Start-Sleep -Seconds 2
+        if (Test-DjiVolume $drive) {
+            Write-DjiLog "DJI volume detected at $drive — starting offload"
+            Start-Process -FilePath $Global:DjiBinary `
+                          -ArgumentList 'run', '--device', $drive `
+                          -WindowStyle Hidden
+        } else {
+            Write-DjiLog "volume $drive arrived but is not a DJI volume — ignoring"
+        }
+    } catch {
+        Write-DjiLog "ERROR in volume handler: $_"
     }
 } | Out-Null
 

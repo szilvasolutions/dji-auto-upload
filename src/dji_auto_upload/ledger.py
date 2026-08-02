@@ -56,11 +56,16 @@ def append_to_ledger(stage_dir: Path, basenames: list[str]) -> None:
 
 
 def files_needing_upload(stage_dir: Path) -> list[str]:
-    """Disk basenames that aren't already in the ledger. Excludes hidden files."""
+    """Disk basenames that aren't already in the ledger.
+
+    Excludes hidden files and `.part` copy temporaries. A `.part` left behind by
+    a killed run is a truncated file; uploading it would put a corrupt clip in
+    the album under a name the ledger then treats as done.
+    """
     uploaded = read_ledger(stage_dir)
     pending = []
     for f in sorted(stage_dir.iterdir()):
-        if not f.is_file() or f.name.startswith("."):
+        if not f.is_file() or f.name.startswith(".") or f.name.endswith(".part"):
             continue
         if f.name not in uploaded:
             pending.append(f.name)

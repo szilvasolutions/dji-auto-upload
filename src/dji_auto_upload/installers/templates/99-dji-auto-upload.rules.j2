@@ -4,11 +4,18 @@
 # script runs as a child of PID 1, escaping systemd-udevd's seccomp filter
 # (which blocks mount(2)) and udev's 180s event_timeout.
 
-{% for vid in vendor_ids -%}
+#
+# The triggered run happens as root under PID 1, so it would otherwise read
+# /etc/dji-auto-upload. When `setup` wrote the config to the invoking user's
+# home instead, install-trigger bakes that dir in with --config so the trigger
+# uses the settings the user actually configured.
+
+{% set cfg_opt = "--config " ~ config_dir ~ " " if config_dir else "" %}
+{%- for vid in vendor_ids %}
 ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", ATTRS{idVendor}=="{{ vid }}", \
-    RUN+="/bin/systemd-run --no-block --collect --slice=dji-auto-upload.slice --unit=dji-auto-upload-%k {{ binary }} run --device /dev/%k"
+    RUN+="/bin/systemd-run --no-block --collect --slice=dji-auto-upload.slice --unit=dji-auto-upload-%k {{ binary }} {{ cfg_opt }}run --device /dev/%k"
 {% endfor %}
 {% for label in labels -%}
 ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}=="{{ label }}", \
-    RUN+="/bin/systemd-run --no-block --collect --slice=dji-auto-upload.slice --unit=dji-auto-upload-%k {{ binary }} run --device /dev/%k"
+    RUN+="/bin/systemd-run --no-block --collect --slice=dji-auto-upload.slice --unit=dji-auto-upload-%k {{ binary }} {{ cfg_opt }}run --device /dev/%k"
 {% endfor %}

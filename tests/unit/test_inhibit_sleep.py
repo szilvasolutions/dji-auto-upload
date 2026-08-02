@@ -152,3 +152,17 @@ def test_macos_uses_caffeinate_bound_to_our_pid(monkeypatch: pytest.MonkeyPatch)
 def test_windows_sets_and_clears_execution_state() -> None:  # pragma: no cover
     with inhibit_sleep() as how:
         assert how == "SetThreadExecutionState"
+
+
+def test_linux_helper_is_bound_to_our_pid_not_a_bare_sleep(spawned: Spawned) -> None:
+    """A bare `sleep N` outlives a SIGKILLed run, reparents to PID 1, and keeps
+    the machine awake for the rest of that sleep."""
+    import os
+
+    with inhibit_sleep():
+        pass
+
+    cmd = spawned.cmds[0]
+    joined = " ".join(cmd)
+    assert f"kill -0 {os.getpid()}" in joined
+    assert "sleep 86400" not in joined

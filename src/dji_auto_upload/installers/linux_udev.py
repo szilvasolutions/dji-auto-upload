@@ -17,6 +17,7 @@ volume label DJIMEDIA. Whichever fires first wins; the unit name is keyed on
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from rich.console import Console
 
 from ..config import Config
+from ..paths import APP_NAME, CONFIG_FILENAME
 
 console = Console()
 
@@ -33,7 +35,18 @@ UDEV_RULE_PATH = Path("/etc/udev/rules.d/99-dji-auto-upload.rules")
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 
-def _render_rule(binary_path: str, vendor_ids: tuple[str, ...], labels: tuple[str, ...]) -> str:
+# The rule is root-owned and its RUN+= line is whitespace-separated, so only
+# embed a config path that is absolute and free of spaces, quotes and shell
+# metacharacters.
+_SAFE_PATH_RE = re.compile(r"^/[A-Za-z0-9._/@+-]*$")
+
+
+def _render_rule(
+    binary_path: str,
+    vendor_ids: tuple[str, ...],
+    labels: tuple[str, ...],
+    config_dir: str | None = None,
+) -> str:
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
         autoescape=select_autoescape(disabled_extensions=("rules", "j2", "plist", "ps1", "xml")),
@@ -43,7 +56,49 @@ def _render_rule(binary_path: str, vendor_ids: tuple[str, ...], labels: tuple[st
         binary=binary_path,
         vendor_ids=list(vendor_ids),
         labels=list(labels),
+        config_dir=config_dir,
     )
+
+
+def _sudo_user_config_dir() -> Path | None:
+    """Config dir of the user who ran `sudo install-trigger`, if they have one.
+
+    udev fires the run as root, which resolves paths to /etc/dji-auto-upload.
+    But the documented flow is `dji-auto-upload setup` as your normal user,
+    which writes to ~/.config/dji-auto-upload. Without this the trigger would
+    silently fall back to built-in defaults (wrong remote, no credentials).
+    """
+    sudo_user = os.environ.get("SUDO_USER")
+    if not sudo_user or sudo_user == "root":
+        return None
+    try:
+        home = Path(f"~{sudo_user}").expanduser()
+    except RuntimeError:  # unknown user
+        return None
+    if not home.is_absolute() or str(home).startswith("~"):
+        return None
+    candidate = home / ".config" / APP_NAME
+    return candidate if (candidate / CONFIG_FILENAME).is_file() else None
+
+
+def _resolve_trigger_config_dir(cfg: Config) -> str | None:
+    """Which --config dir (if any) the udev rule should pin the run to."""
+    # An explicit --config wins; otherwise fall back to the sudo caller's dir.
+    chosen = cfg.paths.config_dir if cfg.paths.config_file.is_file() else None
+    if chosen is None or chosen == Path("/etc") / APP_NAME:
+        chosen = _sudo_user_config_dir() or chosen
+    if chosen is None or chosen == Path("/etc") / APP_NAME:
+        return None  # root's own config dir is the default anyway
+
+    if not _SAFE_PATH_RE.match(str(chosen)):
+        console.print(
+            f"[yellow]Not pinning the trigger to {chosen} — the path contains "
+            "characters that aren't safe to embed in a root-owned udev rule.[/yellow]\n"
+            f"The triggered run will read /etc/{APP_NAME}/ instead; copy your "
+            "config there if it isn't already."
+        )
+        return None
+    return str(chosen)
 
 
 def install(cfg: Config, *, force: bool = False) -> None:
@@ -65,7 +120,20 @@ def install(cfg: Config, *, force: bool = False) -> None:
         return
 
     binary = shutil.which("dji-auto-upload") or "/usr/local/bin/dji-auto-upload"
-    rule_text = _render_rule(binary, cfg.detect.vendor_ids, cfg.detect.volume_labels)
+    config_dir = _resolve_trigger_config_dir(cfg)
+    if config_dir:
+        console.print(f"[green]Trigger will use[/green] {config_dir}/{CONFIG_FILENAME}")
+    elif not (Path("/etc") / APP_NAME / CONFIG_FILENAME).is_file():
+        console.print(
+            "[yellow]No config found for the triggered run.[/yellow] udev runs the "
+            f"offload as root, which reads /etc/{APP_NAME}/{CONFIG_FILENAME}.\n"
+            "Run [cyan]dji-auto-upload setup[/cyan] as your normal user first, then "
+            "re-run this with [cyan]sudo -E[/cyan] so it can find your config — "
+            f"otherwise the trigger falls back to built-in defaults."
+        )
+    rule_text = _render_rule(
+        binary, cfg.detect.vendor_ids, cfg.detect.volume_labels, config_dir
+    )
     UDEV_RULE_PATH.parent.mkdir(parents=True, exist_ok=True)
     UDEV_RULE_PATH.write_text(rule_text, encoding="utf-8")
     UDEV_RULE_PATH.chmod(0o644)

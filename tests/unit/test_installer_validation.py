@@ -4,6 +4,8 @@ quoting context must be rejected before install."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from dji_auto_upload.config import Config, DetectConfig
@@ -46,3 +48,49 @@ def test_bad_vendor_ids_rejected(bad_vid: str) -> None:
 def test_bad_labels_rejected(bad_label: str) -> None:
     with pytest.raises(ConfigError):
         validate_trigger_inputs(_cfg(labels=(bad_label,)))
+
+
+# ---- udev rule: which config the triggered (root) run reads --------------------
+
+
+def _rule(config_dir: str | None) -> str:
+    from dji_auto_upload.installers.linux_udev import _render_rule
+
+    return _render_rule("/usr/bin/dji-auto-upload", ("2ca3",), ("DJI",), config_dir)
+
+
+def test_rule_pins_config_dir_so_the_root_run_uses_the_users_settings() -> None:
+    """udev runs the offload as root, which resolves to /etc/dji-auto-upload.
+    `setup` writes to ~/.config, so without --config the trigger would silently
+    fall back to built-in defaults (wrong remote, no credentials)."""
+    rule = _rule("/home/adam/.config/dji-auto-upload")
+    assert "--config /home/adam/.config/dji-auto-upload run --device" in rule
+
+
+def test_rule_omits_config_when_root_default_is_correct() -> None:
+    run_lines = [ln for ln in _rule(None).splitlines() if "RUN+=" in ln]
+    assert run_lines
+    assert not [ln for ln in run_lines if "--config" in ln]
+
+
+def test_rule_action_lines_are_never_swallowed_by_a_comment() -> None:
+    """A stray Jinja whitespace-trim once merged the ACTION line into the `#`
+    header, which silently disables the whole rule."""
+    for cfg_dir in ("/home/adam/.config/dji-auto-upload", None):
+        rule = _rule(cfg_dir)
+        assert not [
+            ln for ln in rule.splitlines() if ln.strip().startswith("#") and "ACTION==" in ln
+        ]
+        assert len([ln for ln in rule.splitlines() if ln.startswith("ACTION==")]) == 2
+
+
+def test_unsafe_config_path_is_not_embedded_in_the_root_owned_rule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The RUN+= line is whitespace-separated and runs as root — a path with
+    spaces or quotes must never be baked in."""
+    from dji_auto_upload.installers import linux_udev
+
+    for evil in ('/home/a b/.config"; rm -rf /', "/home/x'y/.config", "relative/path"):
+        assert not linux_udev._SAFE_PATH_RE.match(evil)
+    assert linux_udev._SAFE_PATH_RE.match("/home/adam/.config/dji-auto-upload")

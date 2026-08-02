@@ -109,3 +109,16 @@ def test_stage_with_pending_uploads_is_never_pruned(tmp_path: Path) -> None:
         tmp_path, "2026-01-01", ["a.mp4", "b.jpg"], ["a.mp4"], ledger_age_days=365
     )
     assert dirs_to_prune(tmp_path, 14) == []
+
+
+def test_eject_does_not_claim_success_when_nothing_was_unmounted() -> None:
+    """On Linux an autodetected/automounted card isn't ours to release. Saying
+    'ejected, safe to unplug' while it's still mounted risks the user's data."""
+    import sys
+
+    from dji_auto_upload import platform_glue
+
+    if sys.platform != "linux":
+        return
+    assert not platform_glue._MOUNTS_TO_RELEASE  # nothing of ours mounted
+    assert platform_glue.eject_volume(Path("/definitely/not/ours")) is False

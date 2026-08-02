@@ -48,3 +48,15 @@ def test_not_dji_when_no_signal(tmp_path: Path) -> None:
     cfg = DetectConfig()
     vol = VolumeInfo(mountpoint=tmp_path, label="Photos", vendor_id="0000")
     assert not is_dji_volume(vol, cfg)
+
+
+def test_bare_windows_drive_letter_is_normalised_to_the_volume_root() -> None:
+    """Win32_VolumeChangeEvent reports "E:", which is drive-RELATIVE:
+    Path("E:")/"DCIM" is "E:DCIM", resolved against that drive's cwd."""
+    from dji_auto_upload.config import Config
+    from dji_auto_upload.platform_glue import resolve_volume
+
+    cfg = Config()
+    assert str(resolve_volume("E:", cfg)) in ("E:\\", "E:/")
+    # An already-rooted path is left alone.
+    assert str(resolve_volume("E:\\", cfg)) == "E:\\"
