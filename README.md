@@ -284,6 +284,10 @@ dji-auto-upload prune              # manual stage prune
 dji-auto-upload version
 ```
 
+> **Just after a new release?** PyPI is eventually consistent across its CDN,
+> so `update` can briefly still see the previous version. Run it again a minute
+> later rather than assuming it failed.
+
 ## How it works
 
 ```
