@@ -60,3 +60,13 @@ def test_write_defaults_idempotent(tmp_app_paths: AppPaths) -> None:
     tmp_app_paths.config_file.write_text("# user edits\nstage_days = 99\n", encoding="utf-8")
     write_default_config(tmp_app_paths.config_file)
     assert "user edits" in tmp_app_paths.config_file.read_text()
+
+
+def test_inhibit_sleep_defaults_on_and_can_be_disabled(tmp_app_paths: AppPaths) -> None:
+    # Default on: "walk away" should not be defeated by an idle-sleeping laptop.
+    assert load(tmp_app_paths).behaviour.inhibit_sleep is True
+
+    tmp_app_paths.config_file.write_text(
+        "[behaviour]\ninhibit_sleep = false\n", encoding="utf-8"
+    )
+    assert load(tmp_app_paths).behaviour.inhibit_sleep is False

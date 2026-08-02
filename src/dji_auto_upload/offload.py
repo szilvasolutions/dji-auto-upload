@@ -32,7 +32,7 @@ from .inventory import FileInfo, group_by_date, walk_dcim
 from .ledger import append_to_ledger, files_needing_upload, ledger_path, read_ledger
 from .logging_setup import tail_log
 from .notifier import Notifier, escape
-from .platform_glue import eject_volume, remount_ro, remount_rw
+from .platform_glue import eject_volume, inhibit_sleep, remount_ro, remount_rw
 from .stage import existing_stage_dirs, stage_dir_for
 from .upload import remote_reachable, upload_files
 
@@ -62,22 +62,26 @@ class OffloadRun:
         if self.dry_run:
             self._dry_run_report()
             return
-        self.notifier.send(
-            "start",
-            f"🛸 DJI volume detected at <code>{escape(str(self.volume))}</code>. Starting offload…",
-        )
-        self._inventory()
-        self._pre_copy_prune()
-        self._precheck_disk_space()
-        self._copy()
-        self._upload()
-        self._cleanup_drone()
-        ejected = self._eject()
-        self._post_run_prune()
-        done_msg = "🏁 Offload run finished."
-        if ejected:
-            done_msg += " Drone ejected — safe to unplug. 🔌"
-        self.notifier.send("done", done_msg)
+        # "Plug in and walk away" is exactly when a laptop idle-sleeps and
+        # freezes the transfer, so hold a sleep inhibitor for the whole run.
+        with inhibit_sleep(enabled=self.config.behaviour.inhibit_sleep):
+            self.notifier.send(
+                "start",
+                f"🛸 DJI volume detected at <code>{escape(str(self.volume))}</code>. "
+                "Starting offload…",
+            )
+            self._inventory()
+            self._pre_copy_prune()
+            self._precheck_disk_space()
+            self._copy()
+            self._upload()
+            self._cleanup_drone()
+            ejected = self._eject()
+            self._post_run_prune()
+            done_msg = "🏁 Offload run finished."
+            if ejected:
+                done_msg += " Drone ejected — safe to unplug. 🔌"
+            self.notifier.send("done", done_msg)
 
     # ---- Stages --------------------------------------------------------
 

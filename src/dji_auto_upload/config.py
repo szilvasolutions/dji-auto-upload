@@ -60,6 +60,10 @@ upload_retries     = 3
 verify_after_copy  = true                    # size check; mtime is preserved either way
 delete_drone_files = false                   # master switch for drone-side cleanup (opt-in)
 eject_when_done    = true                    # eject/unmount the drone when the run finishes
+# Hold an OS sleep inhibitor while a run is in progress, so an idle laptop does
+# not suspend mid-upload after you walk away. Only blocks *idle* sleep; closing
+# the lid still suspends. Released as soon as the run finishes.
+inhibit_sleep      = true
 
 [notifier]
 enabled = false                              # set to true once Telegram credentials are configured
@@ -115,6 +119,7 @@ class BehaviourConfig:
     verify_after_copy: bool = True
     delete_drone_files: bool = False
     eject_when_done: bool = True
+    inhibit_sleep: bool = True
 
 
 @dataclass(frozen=True)
@@ -195,6 +200,7 @@ def _parse_config_doc(doc: TOMLDocument | dict[str, Any]) -> Config:
             verify_after_copy=bool(behaviour_t.get("verify_after_copy", True)),
             delete_drone_files=bool(behaviour_t.get("delete_drone_files", False)),
             eject_when_done=bool(behaviour_t.get("eject_when_done", True)),
+            inhibit_sleep=bool(behaviour_t.get("inhibit_sleep", True)),
         ),
         notifier=NotifierConfig(
             enabled=bool(notifier_t.get("enabled", False)),

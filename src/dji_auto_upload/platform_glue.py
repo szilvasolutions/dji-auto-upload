@@ -12,10 +12,14 @@ EXIT trap. This is best-effort; the kernel will reap stale mounts on reboot.
 from __future__ import annotations
 
 import atexit
+import contextlib
 import logging
+import os
+import shutil
 import subprocess
 import sys
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
 
 from .config import Config
@@ -127,6 +131,125 @@ def eject_volume(volume: Path) -> bool:
     except Exception as exc:  # never let eject failure tank a finished run
         log.warning("eject %s failed: %s", volume, exc)
         return False
+
+
+_INHIBIT_REASON = "DJI offload in progress"
+
+# Windows SetThreadExecutionState flags. ES_SYSTEM_REQUIRED blocks *idle* sleep;
+# we deliberately omit ES_DISPLAY_REQUIRED so the screen still turns off — the
+# whole point is that the user has walked away.
+_ES_CONTINUOUS = 0x80000000
+_ES_SYSTEM_REQUIRED = 0x00000001
+
+
+@contextlib.contextmanager
+def inhibit_sleep(*, enabled: bool = True, reason: str = _INHIBIT_REASON) -> Iterator[str | None]:
+    """Keep the machine awake for the duration of the block.
+
+    A run is "plug in and walk away", which is exactly when a laptop decides to
+    idle-sleep and freeze the transfer mid-flight. This holds an OS sleep
+    inhibitor until the run finishes, then releases it so the machine can sleep
+    normally.
+
+    Strictly best-effort: yields a short description of the mechanism that was
+    acquired, or None if none was available. Never raises, and never blocks a
+    run just because the inhibitor could not be taken.
+
+    Note this only blocks *idle* sleep. Closing the lid or an explicit sleep
+    still suspends the machine on every OS.
+    """
+    if not enabled:
+        yield None
+        return
+
+    release: subprocess.Popen[bytes] | None = None
+    how: str | None = None
+    try:
+        if sys.platform == "win32":
+            how = _inhibit_windows()
+        elif sys.platform == "darwin":
+            release = _spawn_inhibitor(
+                ["caffeinate", "-i", "-m", "-w", str(os.getpid())]
+            )
+            how = "caffeinate" if release else None
+        else:
+            release = _spawn_inhibitor(
+                [
+                    "systemd-inhibit",
+                    "--what=sleep:idle",
+                    "--who=dji-auto-upload",
+                    f"--why={reason}",
+                    "--mode=block",
+                    "sleep",
+                    "86400",
+                ]
+            )
+            how = "systemd-inhibit" if release else None
+    except Exception as exc:  # pragma: no cover - defensive
+        log.debug("could not acquire sleep inhibitor: %s", exc)
+
+    if how:
+        log.info("sleep inhibitor active (%s) — machine will stay awake for this run", how)
+    else:
+        log.info("no sleep inhibitor available — an idle machine may sleep mid-run")
+
+    try:
+        yield how
+    finally:
+        if release is not None:
+            with contextlib.suppress(Exception):
+                release.terminate()
+                release.wait(timeout=5)
+        if sys.platform == "win32" and how:
+            with contextlib.suppress(Exception):
+                _set_execution_state(_ES_CONTINUOUS)
+        if how:
+            log.info("sleep inhibitor released (%s)", how)
+
+
+def _spawn_inhibitor(cmd: list[str]) -> subprocess.Popen[bytes] | None:
+    """Hold an inhibitor by keeping a helper process alive. None if unavailable."""
+    if not shutil.which(cmd[0]):
+        log.debug("%s not found — cannot inhibit sleep", cmd[0])
+        return None
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        log.debug("failed to start %s: %s", cmd[0], exc)
+        return None
+    # A helper that dies instantly (e.g. logind refused the inhibitor) is not
+    # holding anything — report that honestly rather than claiming protection.
+    try:
+        if proc.wait(timeout=0.5) is not None:
+            log.debug("%s exited immediately — no inhibitor held", cmd[0])
+            return None
+    except subprocess.TimeoutExpired:
+        pass  # still running, which is what we want
+    return proc
+
+
+def _set_execution_state(flags: int) -> int:  # pragma: no cover - Windows only
+    import ctypes
+
+    # `windll` only exists on Windows, so the ignore is needed off-Windows and
+    # redundant on it — hence the extra `unused-ignore` for the win32 mypy run.
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined,unused-ignore]
+    kernel32.SetThreadExecutionState.argtypes = [ctypes.c_uint]
+    kernel32.SetThreadExecutionState.restype = ctypes.c_uint
+    return int(kernel32.SetThreadExecutionState(ctypes.c_uint(flags)))
+
+
+def _inhibit_windows() -> str | None:  # pragma: no cover - Windows only
+    # Returns the previous state, or 0 on failure.
+    if _set_execution_state(_ES_CONTINUOUS | _ES_SYSTEM_REQUIRED) == 0:
+        log.debug("SetThreadExecutionState failed — cannot inhibit sleep")
+        return None
+    return "SetThreadExecutionState"
 
 
 def release_mounts() -> None:

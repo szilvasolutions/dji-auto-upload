@@ -58,6 +58,10 @@ doesn't mount as a drive, so nothing that watches for drives can see it.
   file reached your cloud. Telemetry sidecars (`.SRT`, `.LRF`) are only removed
   along with the video they belong to, and if the drone's clock looks wrong the
   cleanup is skipped entirely rather than guessing.
+- **Your laptop won't fall asleep on the job.** "Walk away" is exactly when a
+  machine decides to idle-sleep and freeze the upload halfway, so a run holds an
+  OS sleep inhibitor until it's finished, then releases it. (Closing the lid
+  still suspends, on any OS. Nothing is lost when it does; see below.)
 - **Try it before you trust it.** `dji-auto-upload run --dry-run` prints exactly
   what it would copy, upload, and delete, and changes nothing.
 - **It tells you when it's safe to unplug.** When the run finishes it ejects the
@@ -211,6 +215,7 @@ disk_headroom_mb   = 512
 verify_after_copy  = true
 delete_drone_files = false   # drone-side deletion is strictly opt-in (set during setup)
 eject_when_done    = true    # eject the drone when finished, so it's safe to unplug
+inhibit_sleep      = true    # keep the machine awake while a run is in progress
 
 [notifier]
 enabled = true
@@ -268,6 +273,22 @@ inventory   precheck     copy        upload     cleanup
 
 See [`docs/architecture.md`](docs/architecture.md) for the full state machine
 and [`docs/why.md`](docs/why.md) for the bash → Python rewrite story.
+
+### What if the computer sleeps anyway?
+
+While a run is active it holds a sleep inhibitor (`SetThreadExecutionState` on
+Windows, `caffeinate` on macOS, `systemd-inhibit` on Linux), so an idle machine
+won't suspend mid-transfer. That covers the normal "plug in and walk away" case.
+
+It can't stop you closing the lid or choosing Sleep from the menu. If that
+happens mid-upload, nothing is lost and nothing is duplicated: files already
+confirmed are in the `.uploaded` ledger, and anything unconfirmed is simply
+retried. The drone is never trimmed for a file that isn't confirmed in the
+cloud. Replug (or run `dji-auto-upload run`) and it picks up exactly where it
+stopped.
+
+Set `inhibit_sleep = false` if you'd rather the machine follow its normal power
+policy during a run.
 
 ## Development
 

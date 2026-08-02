@@ -9,12 +9,16 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import time
+from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from dji_auto_upload import offload
 from dji_auto_upload.config import (
     BehaviourConfig,
     Config,
@@ -215,3 +219,77 @@ def test_dry_run_changes_nothing(
     assert sorted(p.name for p in media.iterdir()) == before
     assert list(cfg.paths.stage_dir.iterdir()) == []
     assert list(fake_rclone.iterdir()) == []
+
+
+# ---- Sleep inhibition --------------------------------------------------------
+
+
+def test_run_holds_a_sleep_inhibitor_for_the_whole_pipeline(
+    tmp_app_paths: AppPaths, synth_volume: Path, fake_rclone: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A laptop that idle-sleeps mid-upload freezes the transfer, so the run
+    must hold an inhibitor from first byte to last and release it after."""
+    events: list[str] = []
+
+    @contextlib.contextmanager
+    def spy(*, enabled: bool = True, reason: str = "") -> Iterator[str | None]:
+        events.append(f"acquire(enabled={enabled})")
+        try:
+            yield "fake"
+        finally:
+            events.append("release")
+
+    monkeypatch.setattr(offload, "inhibit_sleep", spy)
+
+    cfg = _make_config(tmp_app_paths)
+    notifier = _run(cfg, synth_volume)
+
+    assert events == ["acquire(enabled=True)", "release"]
+    # Released only after the run actually finished.
+    assert any(e == "done" for e, _ in notifier.events)
+
+
+def test_inhibitor_is_released_when_the_run_fails(
+    tmp_app_paths: AppPaths, synth_volume: Path, fake_rclone: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    @contextlib.contextmanager
+    def spy(*, enabled: bool = True, reason: str = "") -> Iterator[str | None]:
+        events.append("acquire")
+        try:
+            yield "fake"
+        finally:
+            events.append("release")
+
+    monkeypatch.setattr(offload, "inhibit_sleep", spy)
+    monkeypatch.setenv("FAKE_RCLONE_FAIL_ON_DATE", "2026-")  # every album fails
+
+    cfg = _make_config(tmp_app_paths)
+    with pytest.raises(OffloadError):
+        _run(cfg, synth_volume)
+
+    # Must not leave the machine pinned awake forever after a failure.
+    assert events == ["acquire", "release"]
+
+
+def test_inhibit_sleep_can_be_switched_off(
+    tmp_app_paths: AppPaths, synth_volume: Path, fake_rclone: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[bool] = []
+
+    @contextlib.contextmanager
+    def spy(*, enabled: bool = True, reason: str = "") -> Iterator[str | None]:
+        seen.append(enabled)
+        yield None
+
+    monkeypatch.setattr(offload, "inhibit_sleep", spy)
+
+    cfg = _make_config(tmp_app_paths)
+    cfg = replace(cfg, behaviour=replace(cfg.behaviour, inhibit_sleep=False))
+    _run(cfg, synth_volume)
+
+    assert seen == [False]

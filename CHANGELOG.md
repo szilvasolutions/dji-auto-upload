@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Sleep inhibition while a run is in progress, so an idle laptop no longer
+  suspends mid-upload after you plug in and walk away. Uses
+  `SetThreadExecutionState` on Windows, `caffeinate` on macOS and
+  `systemd-inhibit` on Linux; released as soon as the run ends, including when
+  it fails. Best-effort by design: if no inhibitor can be taken the run still
+  proceeds. Switch it off with `inhibit_sleep = false`. Note this blocks idle
+  sleep only; closing the lid still suspends, which the ledger already makes
+  safe to resume from.
+
 ### Fixed
 - Windows auto-trigger never fired: the `Register-WmiEvent` action scriptblock ran
   in its own scope, so the `Test-DjiVolume` function and the vendor-ID/label config

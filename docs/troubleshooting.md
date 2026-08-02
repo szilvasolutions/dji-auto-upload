@@ -127,6 +127,26 @@ went to sleep mid-transfer). The local stage is retained — replug and the
 next run will skip the already-complete files (size match) and resume the
 rest.
 
+## The computer went to sleep in the middle of a run
+
+A run holds a sleep inhibitor (`SetThreadExecutionState` / `caffeinate` /
+`systemd-inhibit`), so idle sleep shouldn't interrupt it. Closing the lid or
+sleeping explicitly still suspends the machine on every OS.
+
+Either way nothing is lost or duplicated: confirmed files are in `.uploaded`
+and the rest are retried. Replug, or run `dji-auto-upload run`, to resume.
+
+Check the inhibitor is actually being taken:
+
+- **Linux** — during a run, `systemd-inhibit --list` should show a
+  `dji-auto-upload … sleep:idle … block` entry. If it's missing, `systemd-inhibit`
+  isn't installed or logind refused it; the log line
+  `no sleep inhibitor available` says so.
+- **macOS** — `pmset -g assertions` lists the `caffeinate` assertion.
+- **Windows** — `powercfg /requests` shows a SYSTEM request while a run is live.
+
+Set `inhibit_sleep = false` under `[behaviour]` to opt out.
+
 ## My stage dir isn't being pruned
 
 By design, a stage dir is only eligible for prune if `.uploaded` exists
