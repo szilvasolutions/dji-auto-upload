@@ -13,6 +13,9 @@ $ErrorActionPreference = 'Continue'
 $Global:DjiVendorIds = @({% for v in vendor_ids %}'{{ v }}'{% if not loop.last %}, {% endif %}{% endfor %})
 $Global:DjiLabels    = @({% for l in labels %}'{{ l }}'{% if not loop.last %}, {% endif %}{% endfor %})
 $Global:DjiBinary    = '{{ binary }}'
+# Non-empty when the console script isn't on PATH and we launch through the
+# interpreter instead: python -m dji_auto_upload <command...>
+$Global:DjiPreArgs   = @({% for a in pre_args or [] %}'{{ a }}'{% if not loop.last %}, {% endif %}{% endfor %})
 $Global:DjiLogFile   = Join-Path $env:LOCALAPPDATA 'dji-auto-upload\watcher.log'
 
 function Global:Write-DjiLog($message) {
@@ -67,8 +70,9 @@ Register-WmiEvent -Class Win32_VolumeChangeEvent -SourceIdentifier DjiVolumeWatc
         Start-Sleep -Seconds 2
         if (Test-DjiVolume $drive) {
             Write-DjiLog "DJI volume detected at $drive — starting offload"
+            $argList = @($Global:DjiPreArgs) + @('run', '--device', $drive)
             Start-Process -FilePath $Global:DjiBinary `
-                          -ArgumentList 'run', '--device', $drive `
+                          -ArgumentList $argList `
                           -WindowStyle Hidden
         } else {
             Write-DjiLog "volume $drive arrived but is not a DJI volume — ignoring"

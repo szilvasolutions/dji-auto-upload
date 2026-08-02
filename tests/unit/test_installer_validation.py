@@ -136,3 +136,28 @@ def test_ps1_binary_path_with_an_apostrophe_cannot_break_the_string() -> None:
         labels=["DJI"],
     )
     assert "'C:\\Users\\O''Brien\\dji.exe'" in ps
+
+
+def test_watcher_can_launch_via_interpreter_when_shim_is_off_path() -> None:
+    """pip --user installs often leave Scripts/ off PATH; the task must then
+    launch `python -m dji_auto_upload` instead of a bare name that Start-Process
+    can't resolve at event time."""
+    from dji_auto_upload.installers.windows_task import _ps_single_quote, _render
+
+    ps = _render(
+        "dji-watcher.ps1.j2",
+        binary=_ps_single_quote(r"C:\Python312\python.exe"),
+        pre_args=["-m", "dji_auto_upload"],
+        vendor_ids=["2ca3"],
+        labels=["DJI"],
+    )
+    assert "$Global:DjiPreArgs   = @('-m', 'dji_auto_upload')" in ps
+    # And with the shim on PATH the pre-args list is simply empty.
+    ps2 = _render(
+        "dji-watcher.ps1.j2",
+        binary=_ps_single_quote(r"C:\Scripts\dji-auto-upload.exe"),
+        pre_args=[],
+        vendor_ids=["2ca3"],
+        labels=["DJI"],
+    )
+    assert "$Global:DjiPreArgs   = @()" in ps2

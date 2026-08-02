@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- One-command install. `install.ps1` (Windows) and `install.sh` (Linux/macOS)
+  install Python and rclone if missing, install the tool, and drop straight
+  into the setup wizard — which already ends by offering the auto-trigger.
+  The scripts survive being streamed (`irm | iex`, `curl | bash`): the shell
+  parses everything before running, and the wizard reads from /dev/tty.
+- The Windows watcher no longer depends on PATH: if the `dji-auto-upload`
+  console script isn't resolvable (typical for `pip --user` installs), the
+  Scheduled Task launches `python -m dji_auto_upload` via the interpreter that
+  installed it.
 - `dji-auto-upload diagnose` writes a single support bundle (versions, config,
   rclone remotes, trigger state, stage summary, recent logs, and the Windows
   watcher log) so a bug report can be one attachment instead of a back-and-forth.

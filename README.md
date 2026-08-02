@@ -71,13 +71,36 @@ doesn't mount as a drive, so nothing that watches for drives can see it.
 
 ## Quick start
 
+One command. It installs Python and rclone if you don't have them, installs
+dji-auto-upload, and walks you through setup — including the plug-in trigger.
+
+**Windows** (paste into PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/szilvasolutions/dji-auto-upload/main/install.ps1 | iex
+```
+
+**macOS / Linux** (paste into a terminal):
+
 ```bash
-pip install dji-auto-upload
+curl -fsSL https://raw.githubusercontent.com/szilvasolutions/dji-auto-upload/main/install.sh | bash
+```
+
+Answer the questions, plug in your drone. That's it.
+
+<details>
+<summary><b>Prefer to install by hand?</b></summary>
+
+```bash
+pip install https://github.com/szilvasolutions/dji-auto-upload/archive/refs/heads/main.zip
 dji-auto-upload setup            # interactive: rclone remote, retention, optional Telegram
 dji-auto-upload install-trigger  # OS-specific auto-trigger (sudo on Linux)
 ```
 
-Plug in your drone. That's it.
+You'll need Python 3.10+ and [rclone](https://rclone.org/install/) installed
+yourself. The per-OS sections below have the details.
+
+</details>
 
 ## Setting up rclone
 
@@ -131,7 +154,7 @@ one most people should pick.
 Requires `rclone` and `udev` (already on every desktop distro).
 
 ```bash
-pip install dji-auto-upload
+pip install https://github.com/szilvasolutions/dji-auto-upload/archive/refs/heads/main.zip
 dji-auto-upload setup
 sudo dji-auto-upload install-trigger    # writes /etc/udev/rules.d/99-dji-auto-upload.rules
 ```
@@ -155,7 +178,7 @@ Requires `rclone`. Install via Homebrew if needed:
 
 ```bash
 brew install rclone
-pip install dji-auto-upload
+pip install https://github.com/szilvasolutions/dji-auto-upload/archive/refs/heads/main.zip
 dji-auto-upload setup
 dji-auto-upload install-trigger    # writes ~/Library/LaunchAgents/com.dji-auto-upload.watcher.plist
 ```
@@ -176,7 +199,7 @@ Install rclone via winget:
 
 ```powershell
 winget install Rclone.Rclone
-pip install dji-auto-upload
+pip install https://github.com/szilvasolutions/dji-auto-upload/archive/refs/heads/main.zip
 dji-auto-upload setup
 dji-auto-upload install-trigger
 ```

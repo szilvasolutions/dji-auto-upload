@@ -64,11 +64,19 @@ def install(cfg: Config, *, force: bool = False) -> None:
     watcher = _watcher_path()
     watcher.parent.mkdir(parents=True, exist_ok=True)
 
-    binary = shutil.which("dji-auto-upload") or "dji-auto-upload"
+    # Prefer the console-script shim, but pip --user installs often leave the
+    # Scripts dir off PATH — in that case launch via the interpreter itself
+    # (`python -m dji_auto_upload`), which needs no PATH at all.
+    exe = shutil.which("dji-auto-upload")
+    if exe:
+        binary, pre_args = exe, []
+    else:
+        binary, pre_args = sys.executable, ["-m", "dji_auto_upload"]
     watcher.write_text(
         _render(
             "dji-watcher.ps1.j2",
             binary=_ps_single_quote(binary),
+            pre_args=[_ps_single_quote(a) for a in pre_args],
             vendor_ids=list(cfg.detect.vendor_ids),
             labels=list(cfg.detect.volume_labels),
         ),
