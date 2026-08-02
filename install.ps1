@@ -71,8 +71,17 @@ if (-not (Get-Command rclone -ErrorAction SilentlyContinue)) {
 
 # --- dji-auto-upload ------------------------------------------------------------
 Write-Step "Installing dji-auto-upload"
-& $py.Exe $py.Args -m pip install --upgrade --quiet `
-    "https://github.com/szilvasolutions/dji-auto-upload/archive/refs/heads/main.zip"
+$src = "https://github.com/szilvasolutions/dji-auto-upload/archive/refs/heads/main.zip"
+# Dependencies first...
+& $py.Exe $py.Args -m pip install --upgrade --quiet $src
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "pip install failed - scroll up for the error." -ForegroundColor Red
+    return
+}
+# ...then force the package itself. Branch builds all report the same version,
+# so a plain --upgrade would decide the requirement is already satisfied and
+# silently install nothing, leaving the old code in place.
+& $py.Exe $py.Args -m pip install --force-reinstall --no-deps --no-cache-dir --quiet $src
 if ($LASTEXITCODE -ne 0) {
     Write-Host "pip install failed - scroll up for the error." -ForegroundColor Red
     return

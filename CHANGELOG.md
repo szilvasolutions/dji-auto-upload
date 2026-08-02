@@ -41,6 +41,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   are included and the file says so.
 
 ### Fixed
+- Every update after the first silently did nothing. Builds from `main` all
+  carry the same version string, so `pip install --upgrade <zip-url>` compared
+  0.2.0 against 0.2.0, concluded the requirement was satisfied, and installed
+  no code — while printing pages of "Requirement already satisfied" that look
+  like success. `update` and both bootstrap scripts now force the package in
+  with `--force-reinstall --no-deps` after a normal pass for dependencies.
+
+### Fixed
 - A slow rclone remote no longer aborts the run. The reachability probe used a
   10s timeout on `rclone lsd`, which a cold cloud remote regularly exceeds
   (measured: 2 of 10 probes hit the limit, and a first upload batch took 55s),

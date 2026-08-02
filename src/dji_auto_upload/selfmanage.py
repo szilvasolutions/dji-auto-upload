@@ -46,7 +46,21 @@ def update(source: str = DEFAULT_SOURCE, *, reinstall_trigger: bool = True) -> i
     console.print(f"[cyan]Updating from:[/cyan] {source}")
     console.print(f"[dim]Using interpreter: {sys.executable}[/dim]\n")
 
-    proc = _pip("install", "--upgrade", "--no-cache-dir", source)
+    # Two steps, and the second one matters more than it looks.
+    #
+    # Builds from a branch all carry the same version string, so
+    # `pip install --upgrade <url>` compares 0.2.0 against 0.2.0, decides the
+    # requirement is already satisfied, and installs nothing at all — while
+    # printing a wall of "Requirement already satisfied" that reads like
+    # success. --force-reinstall --no-deps is what actually replaces the code;
+    # the plain pass before it is what picks up any newly added dependency.
+    deps = _pip("install", "--upgrade", source)
+    if deps.returncode != 0:
+        console.print("[red]Update failed while resolving dependencies.[/red]")
+        console.print((deps.stderr or deps.stdout).strip()[-1500:])
+        return 1
+
+    proc = _pip("install", "--force-reinstall", "--no-deps", "--no-cache-dir", source)
     if proc.returncode != 0:
         console.print("[red]Update failed.[/red]")
         console.print((proc.stderr or proc.stdout).strip()[-1500:])
@@ -55,10 +69,12 @@ def update(source: str = DEFAULT_SOURCE, *, reinstall_trigger: bool = True) -> i
     # This process still holds the OLD code in memory, so ask a fresh one what
     # it is; that is the only honest way to report the installed version.
     new_version = _installed_version()
-    if new_version and new_version != __version__:
-        console.print(f"[green]Updated:[/green] {__version__} → {new_version}")
-    else:
-        console.print(f"[green]Up to date[/green] ({new_version or __version__})")
+    console.print(f"[green]Reinstalled.[/green] Version now: {new_version or __version__}")
+    if new_version == __version__:
+        console.print(
+            "[dim]Same version string — branch builds share one, so this is expected; "
+            "the code was replaced regardless.[/dim]"
+        )
 
     if reinstall_trigger:
         # Must run in a NEW process so the regenerated trigger comes from the

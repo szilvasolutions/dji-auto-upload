@@ -119,3 +119,25 @@ def test_remove_paths_tolerates_missing_entries(tmp_path: Path) -> None:
     present.write_text("x", encoding="utf-8")
     selfmanage.remove_paths([present, tmp_path / "never-existed"])
     assert not present.exists()
+
+
+def test_update_force_reinstalls_because_branch_builds_share_a_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`pip install --upgrade <url>` compares 0.2.0 to 0.2.0, decides the
+    requirement is satisfied, and installs NOTHING while printing a wall of
+    "Requirement already satisfied" that reads like success. The package must
+    be forced in, or every update after the first is a silent no-op."""
+    seen: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
+        seen.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="0.2.0", stderr="")
+
+    monkeypatch.setattr(selfmanage.subprocess, "run", fake_run)
+    selfmanage.update("SRC", reinstall_trigger=False)
+
+    forced = [c for c in seen if "--force-reinstall" in c]
+    assert forced, f"no forced reinstall issued: {seen}"
+    # --no-deps keeps the force pass from needlessly rebuilding every dependency.
+    assert "--no-deps" in forced[0]
