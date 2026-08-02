@@ -49,8 +49,25 @@ def list_remotes() -> list[str]:
     return [line.rstrip(":").strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
-def remote_reachable(remote: str, *, timeout: int = 10) -> bool:
-    """`rclone lsd <remote>:` smoke test."""
+def remote_configured(remote: str) -> bool:
+    """Is this remote defined in rclone.conf? Local config read, no API call.
+
+    This is the deterministic half of the check: if the name isn't here, the
+    user really has mistyped it or never ran `rclone config`.
+    """
+    remotes = list_remotes()
+    # An empty list means `rclone listremotes` itself failed; don't claim the
+    # remote is missing on the strength of a failed probe.
+    return not remotes or remote in remotes
+
+
+def remote_reachable(remote: str, *, timeout: int = 30) -> bool:
+    """`rclone lsd <remote>:` smoke test.
+
+    Only a liveness hint, never a verdict. A cold cloud remote can easily need
+    more than a few seconds (OAuth refresh plus a root listing), so the timeout
+    is generous and callers must treat False as "unproven", not "broken".
+    """
     try:
         proc = subprocess.run(
             [rclone_binary(), "lsd", f"{remote}:"],

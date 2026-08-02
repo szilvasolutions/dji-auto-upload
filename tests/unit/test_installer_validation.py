@@ -107,3 +107,32 @@ def test_rule_points_rclone_at_the_users_config() -> None:
     assert "--setenv=RCLONE_CONFIG=/home/adam/.config/rclone/rclone.conf" in rule
     # And is omitted entirely when we have nothing to point at.
     assert "RCLONE_CONFIG" not in _render_rule("/usr/bin/dji-auto-upload", ("2ca3",), (), None, None)
+
+
+def test_task_xml_survives_an_ampersand_in_the_username() -> None:
+    """`&` in a username or path makes the task XML malformed and schtasks
+    fails with an opaque error."""
+    import xml.dom.minidom as md
+
+    from dji_auto_upload.installers.windows_task import _render
+
+    xml = _render(
+        "DjiAutoUploadTask.xml.j2",
+        powershell="powershell.exe",
+        watcher_path=r"C:\Users\Tom & Jerry\dji-watcher.ps1",
+        user="DOMAIN\\Tom & Jerry",
+    )
+    md.parseString(xml)  # raises if malformed
+    assert "&amp;" in xml and "&amp;amp;" not in xml
+
+
+def test_ps1_binary_path_with_an_apostrophe_cannot_break_the_string() -> None:
+    from dji_auto_upload.installers.windows_task import _ps_single_quote, _render
+
+    ps = _render(
+        "dji-watcher.ps1.j2",
+        binary=_ps_single_quote(r"C:\Users\O'Brien\dji.exe"),
+        vendor_ids=["2ca3"],
+        labels=["DJI"],
+    )
+    assert "'C:\\Users\\O''Brien\\dji.exe'" in ps

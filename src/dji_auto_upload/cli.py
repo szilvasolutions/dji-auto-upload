@@ -85,8 +85,13 @@ def status(ctx: typer.Context) -> None:
     table.add_row("path template", cfg.remote.path_template)
     remotes = list_remotes()
     if cfg.remote.name in remotes:
-        ok = remote_reachable(cfg.remote.name, timeout=10)
-        table.add_row("rclone reachable", "[green]yes[/green]" if ok else "[yellow]no[/yellow]")
+        # Generous timeout: a cold cloud remote needs an OAuth refresh plus a
+        # root listing, and "no" here should mean something, not just "slow".
+        ok = remote_reachable(cfg.remote.name, timeout=30)
+        table.add_row(
+            "rclone reachable",
+            "[green]yes[/green]" if ok else "[yellow]no answer (slow or offline)[/yellow]",
+        )
     else:
         table.add_row("rclone configured", "[red]no[/red] — run `rclone config` then `dji-auto-upload setup`")
     if cfg.notifier.enabled and cfg.telegram.configured:

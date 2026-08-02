@@ -34,7 +34,7 @@ from .logging_setup import tail_log
 from .notifier import Notifier, escape
 from .platform_glue import eject_volume, inhibit_sleep, remount_ro, remount_rw
 from .stage import existing_stage_dirs, stage_dir_for
-from .upload import remote_reachable, upload_files
+from .upload import remote_configured, remote_reachable, upload_files
 
 log = logging.getLogger(__name__)
 
@@ -210,11 +210,21 @@ class OffloadRun:
 
     def _upload(self) -> None:
         log.info("stage=upload")
-        if not remote_reachable(self.config.remote.name):
+        remote_name = self.config.remote.name
+        if not remote_configured(remote_name):
             raise OffloadError(
-                f"rclone remote {self.config.remote.name!r} not reachable — "
-                f"run `rclone config` or check credentials",
+                f"rclone remote {remote_name!r} is not configured — "
+                f"run `rclone config`, or fix the name in your config file",
                 stage="upload",
+            )
+        # A slow probe is not a broken remote. A cold cloud remote can take tens
+        # of seconds to answer, and failing the whole run on that would strand
+        # footage that rclone (with its own retries) would have uploaded fine.
+        if not remote_reachable(remote_name):
+            log.warning(
+                "remote %r did not answer the reachability probe in time — "
+                "continuing anyway; rclone will report the real error if there is one",
+                remote_name,
             )
 
         all_dates = [d.name for d in existing_stage_dirs(self.stage_base)]

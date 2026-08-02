@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from rich.console import Console
 
 from ..config import Config
@@ -37,8 +37,23 @@ def _watcher_path() -> Path:
 
 
 def _render(name: str, **ctx: Any) -> str:
-    env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), keep_trailing_newline=True)
+    env = Environment(
+        loader=FileSystemLoader(str(TEMPLATE_DIR)),
+        # The task XML interpolates a username and a path. An `&` in either (or
+        # `<`, `>`, quotes) makes the document malformed and schtasks fails with
+        # an opaque error, so escape XML output. The .ps1 is not XML and must not
+        # be escaped — it is quoted separately, see _ps_single_quote.
+        # Note the ".xml.j2" entry: select_autoescape matches the *final*
+        # extension, so "xml" alone would never match "…Task.xml.j2".
+        autoescape=select_autoescape(enabled_extensions=("xml", "xml.j2"), default=False),
+        keep_trailing_newline=True,
+    )
     return env.get_template(name).render(**ctx)
+
+
+def _ps_single_quote(value: str) -> str:
+    """Escape a value for a PowerShell single-quoted string ('' is a literal ')."""
+    return value.replace("'", "''")
 
 
 def install(cfg: Config, *, force: bool = False) -> None:
@@ -53,7 +68,7 @@ def install(cfg: Config, *, force: bool = False) -> None:
     watcher.write_text(
         _render(
             "dji-watcher.ps1.j2",
-            binary=binary,
+            binary=_ps_single_quote(binary),
             vendor_ids=list(cfg.detect.vendor_ids),
             labels=list(cfg.detect.volume_labels),
         ),
