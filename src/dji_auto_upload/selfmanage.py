@@ -32,6 +32,18 @@ DEFAULT_SOURCE = (
 )
 
 
+def is_versioned_source(source: str) -> bool:
+    """True for a PyPI requirement, False for a URL or local path.
+
+    Decides whether pip can be trusted to compare versions (PyPI) or has to be
+    forced (a branch archive, where every build claims the same version).
+    """
+    s = source.strip().lower()
+    if s.startswith(("http://", "https://", "git+", "file:", ".", "/")):
+        return False
+    return not s.endswith((".zip", ".tar.gz", ".whl"))
+
+
 def _pip(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "pip", *args],
@@ -46,25 +58,31 @@ def update(source: str = DEFAULT_SOURCE, *, reinstall_trigger: bool = True) -> i
     console.print(f"[cyan]Updating from:[/cyan] {source}")
     console.print(f"[dim]Using interpreter: {sys.executable}[/dim]\n")
 
-    # Two steps, and the second one matters more than it looks.
-    #
-    # Builds from a branch all carry the same version string, so
-    # `pip install --upgrade <url>` compares 0.2.0 against 0.2.0, decides the
-    # requirement is already satisfied, and installs nothing at all — while
-    # printing a wall of "Requirement already satisfied" that reads like
-    # success. --force-reinstall --no-deps is what actually replaces the code;
-    # the plain pass before it is what picks up any newly added dependency.
-    deps = _pip("install", "--upgrade", source)
-    if deps.returncode != 0:
-        console.print("[red]Update failed while resolving dependencies.[/red]")
-        console.print((deps.stderr or deps.stdout).strip()[-1500:])
-        return 1
+    if is_versioned_source(source):
+        # A PyPI release has a real version number, so pip can compare honestly
+        # and will skip the download when there is genuinely nothing newer.
+        proc = _pip("install", "--upgrade", source)
+        if proc.returncode != 0:
+            console.print("[red]Update failed.[/red]")
+            console.print((proc.stderr or proc.stdout).strip()[-1500:])
+            return 1
+    else:
+        # Branch builds all carry the same version string, so a plain --upgrade
+        # compares 0.2.0 against 0.2.0, decides the requirement is satisfied,
+        # and installs nothing — while printing a wall of "Requirement already
+        # satisfied" that reads like success. Force the code in; the pass before
+        # it is what picks up any newly added dependency.
+        deps = _pip("install", "--upgrade", source)
+        if deps.returncode != 0:
+            console.print("[red]Update failed while resolving dependencies.[/red]")
+            console.print((deps.stderr or deps.stdout).strip()[-1500:])
+            return 1
 
-    proc = _pip("install", "--force-reinstall", "--no-deps", "--no-cache-dir", source)
-    if proc.returncode != 0:
-        console.print("[red]Update failed.[/red]")
-        console.print((proc.stderr or proc.stdout).strip()[-1500:])
-        return 1
+        proc = _pip("install", "--force-reinstall", "--no-deps", "--no-cache-dir", source)
+        if proc.returncode != 0:
+            console.print("[red]Update failed.[/red]")
+            console.print((proc.stderr or proc.stdout).strip()[-1500:])
+            return 1
 
     # This process still holds the OLD code in memory, so ask a fresh one what
     # it is; that is the only honest way to report the installed version.

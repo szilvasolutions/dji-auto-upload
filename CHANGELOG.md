@@ -3,7 +3,7 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.3.0] - 2026-08-02
 
 ### Added
 - `dji-auto-upload update` upgrades in place and regenerates the auto-trigger
@@ -166,5 +166,6 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.3.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/szilvasolutions/dji-auto-upload/releases/tag/v0.1.0

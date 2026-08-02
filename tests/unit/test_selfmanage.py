@@ -135,9 +135,39 @@ def test_update_force_reinstalls_because_branch_builds_share_a_version(
         return subprocess.CompletedProcess(cmd, 0, stdout="0.2.0", stderr="")
 
     monkeypatch.setattr(selfmanage.subprocess, "run", fake_run)
-    selfmanage.update("SRC", reinstall_trigger=False)
+    selfmanage.update("https://example.invalid/main.zip", reinstall_trigger=False)
 
     forced = [c for c in seen if "--force-reinstall" in c]
     assert forced, f"no forced reinstall issued: {seen}"
     # --no-deps keeps the force pass from needlessly rebuilding every dependency.
     assert "--no-deps" in forced[0]
+
+
+@pytest.mark.parametrize(
+    "source,versioned",
+    [
+        ("dji-auto-upload", True),
+        ("dji-auto-upload>=0.3", True),
+        ("https://github.com/x/y/archive/refs/heads/main.zip", False),
+        ("git+https://github.com/x/y", False),
+        ("./dist/dji_auto_upload-0.3.0-py3-none-any.whl", False),
+        ("/tmp/dji.tar.gz", False),
+    ],
+)
+def test_only_pypi_sources_let_pip_compare_versions(source: str, versioned: bool) -> None:
+    assert selfmanage.is_versioned_source(source) is versioned
+
+
+def test_pypi_source_does_not_force_reinstall(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Once released properly, pip can tell versions apart — forcing a
+    reinstall every time would just re-download for nothing."""
+    seen: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
+        seen.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="0.3.0", stderr="")
+
+    monkeypatch.setattr(selfmanage.subprocess, "run", fake_run)
+    selfmanage.update("dji-auto-upload", reinstall_trigger=False)
+
+    assert not [c for c in seen if "--force-reinstall" in c]
