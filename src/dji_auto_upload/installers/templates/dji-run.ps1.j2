@@ -1,0 +1,30 @@
+# dji-auto-upload runner — launched by the watcher in a VISIBLE console window
+# when a DJI volume arrives, so the user can watch the offload happen instead
+# of wondering whether anything is going on.
+#
+# Outcome is announced with a popup: success auto-dismisses after a few
+# seconds, failure stays on screen with the log path.
+
+param([string]$Drive)
+
+$Host.UI.RawUI.WindowTitle = 'DJI Auto Upload'
+Write-Host ''
+Write-Host "  DJI device detected at $Drive" -ForegroundColor Green
+Write-Host '  Starting offload - this window closes by itself when done.' -ForegroundColor DarkGray
+Write-Host ''
+
+& '{{ binary }}' {% for a in pre_args or [] %}'{{ a }}' {% endfor %}run --device $Drive
+$code = $LASTEXITCODE
+
+$shell = New-Object -ComObject WScript.Shell
+if ($code -eq 0) {
+    # 64 = info icon; auto-dismisses after 5 seconds.
+    $shell.Popup("DJI offload complete - footage is in your cloud.", 5, 'DJI Auto Upload', 64) | Out-Null
+} else {
+    # 16 = error icon; 0 = stays until dismissed.
+    $msg = "DJI offload FAILED (exit code $code).`n`n" +
+           "Log file:`n{{ log_file }}`n`n" +
+           "For a support bundle to attach to a bug report, run:`n" +
+           "dji-auto-upload diagnose"
+    $shell.Popup($msg, 0, 'DJI Auto Upload', 16) | Out-Null
+}

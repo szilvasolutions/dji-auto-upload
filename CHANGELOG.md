@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Plugging in a drone on Windows now opens a visible console that streams the
+  offload as it runs, and announces the outcome with a popup: success
+  auto-dismisses after 5 seconds, failure stays on screen with the log path and
+  the `diagnose` command. Silent background success looked identical to silent
+  background failure, which is the one thing an automation must never do.
+- `install-trigger` on Windows starts the watcher immediately after creating
+  the Scheduled Task. The logon trigger only armed it at the NEXT sign-in, so a
+  fresh install did nothing until the user happened to log out.
 - One-command install. `install.ps1` (Windows) and `install.sh` (Linux/macOS)
   install Python and rclone if missing, install the tool, and drop straight
   into the setup wizard — which already ends by offering the auto-trigger.

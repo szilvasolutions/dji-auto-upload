@@ -72,17 +72,28 @@ def install(cfg: Config, *, force: bool = False) -> None:
         binary, pre_args = exe, []
     else:
         binary, pre_args = sys.executable, ["-m", "dji_auto_upload"]
+
+    runner = watcher.with_name("dji-run.ps1")
+    runner.write_text(
+        _render(
+            "dji-run.ps1.j2",
+            binary=_ps_single_quote(binary),
+            pre_args=[_ps_single_quote(a) for a in pre_args],
+            log_file=str(cfg.paths.log_file),
+        ),
+        encoding="utf-8",
+    )
     watcher.write_text(
         _render(
             "dji-watcher.ps1.j2",
-            binary=_ps_single_quote(binary),
-            pre_args=[_ps_single_quote(a) for a in pre_args],
+            runner=_ps_single_quote(str(runner)),
             vendor_ids=list(cfg.detect.vendor_ids),
             labels=list(cfg.detect.volume_labels),
         ),
         encoding="utf-8",
     )
     console.print(f"[green]Wrote[/green] {watcher}")
+    console.print(f"[green]Wrote[/green] {runner}")
 
     task_xml_path = watcher.with_name("DjiAutoUploadTask.xml")
     task_xml_path.write_text(
@@ -116,10 +127,25 @@ def install(cfg: Config, *, force: bool = False) -> None:
             f"  [cyan]schtasks /create /tn \"{TASK_NAME}\" /xml \"{task_xml_path}\" /f[/cyan]"
         )
         return
-    console.print(
-        "[bold green]Scheduled Task installed.[/bold green] Sign out and back in to start the watcher, "
-        "or run [cyan]schtasks /run /tn \"DJI Auto Upload Watcher\"[/cyan]."
+    # The logon trigger only arms the watcher at the NEXT sign-in; start it now
+    # so "install, plug in drone" works without a logout in between.
+    started = subprocess.run(
+        ["schtasks", "/run", "/tn", TASK_NAME],
+        capture_output=True,
+        text=True,
     )
+    if started.returncode == 0:
+        console.print(
+            "[bold green]Watcher installed and armed.[/bold green] Plug in your drone — "
+            "a console window will pop up and show the offload as it runs."
+        )
+    else:
+        console.print(
+            "[bold green]Scheduled Task installed[/bold green], but it could not be started "
+            f"right away ({started.stderr.strip()}).\n"
+            "Sign out and back in, or run "
+            "[cyan]schtasks /run /tn \"DJI Auto Upload Watcher\"[/cyan]."
+        )
 
 
 def uninstall(cfg: Config) -> None:
@@ -134,6 +160,7 @@ def uninstall(cfg: Config) -> None:
         console.print(f"[dim]No '{TASK_NAME}' task found ({proc.stderr.strip()}).[/dim]")
 
     watcher = _watcher_path()
-    if watcher.exists():
-        watcher.unlink()
-        console.print(f"[green]Removed[/green] {watcher}")
+    for f in (watcher, watcher.with_name("dji-run.ps1")):
+        if f.exists():
+            f.unlink()
+            console.print(f"[green]Removed[/green] {f}")

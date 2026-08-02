@@ -126,38 +126,44 @@ def test_task_xml_survives_an_ampersand_in_the_username() -> None:
     assert "&amp;" in xml and "&amp;amp;" not in xml
 
 
-def test_ps1_binary_path_with_an_apostrophe_cannot_break_the_string() -> None:
+def test_runner_binary_path_with_an_apostrophe_cannot_break_the_string() -> None:
     from dji_auto_upload.installers.windows_task import _ps_single_quote, _render
 
     ps = _render(
-        "dji-watcher.ps1.j2",
+        "dji-run.ps1.j2",
         binary=_ps_single_quote(r"C:\Users\O'Brien\dji.exe"),
-        vendor_ids=["2ca3"],
-        labels=["DJI"],
+        pre_args=[],
+        log_file=r"C:\Users\O'Brien\log.txt",
     )
     assert "'C:\\Users\\O''Brien\\dji.exe'" in ps
 
 
-def test_watcher_can_launch_via_interpreter_when_shim_is_off_path() -> None:
-    """pip --user installs often leave Scripts/ off PATH; the task must then
-    launch `python -m dji_auto_upload` instead of a bare name that Start-Process
-    can't resolve at event time."""
+def test_runner_can_launch_via_interpreter_when_shim_is_off_path() -> None:
+    """pip --user installs often leave Scripts/ off PATH; the runner must then
+    launch `python -m dji_auto_upload` instead of a bare name that would fail
+    to resolve at event time."""
+    from dji_auto_upload.installers.windows_task import _ps_single_quote, _render
+
+    ps = _render(
+        "dji-run.ps1.j2",
+        binary=_ps_single_quote(r"C:\Python312\python.exe"),
+        pre_args=["-m", "dji_auto_upload"],
+        log_file=r"C:\logs\dji.log",
+    )
+    assert "& 'C:\\Python312\\python.exe' '-m' 'dji_auto_upload' run --device $Drive" in ps
+
+
+def test_watcher_hands_off_to_the_visible_runner() -> None:
+    """The watcher must launch the runner in a VISIBLE window (the user asked to
+    SEE progress) and reference the rendered runner path, not a bare binary."""
     from dji_auto_upload.installers.windows_task import _ps_single_quote, _render
 
     ps = _render(
         "dji-watcher.ps1.j2",
-        binary=_ps_single_quote(r"C:\Python312\python.exe"),
-        pre_args=["-m", "dji_auto_upload"],
+        runner=_ps_single_quote(r"C:\Users\szisz\AppData\Local\dji-auto-upload\dji-run.ps1"),
         vendor_ids=["2ca3"],
         labels=["DJI"],
     )
-    assert "$Global:DjiPreArgs   = @('-m', 'dji_auto_upload')" in ps
-    # And with the shim on PATH the pre-args list is simply empty.
-    ps2 = _render(
-        "dji-watcher.ps1.j2",
-        binary=_ps_single_quote(r"C:\Scripts\dji-auto-upload.exe"),
-        pre_args=[],
-        vendor_ids=["2ca3"],
-        labels=["DJI"],
-    )
-    assert "$Global:DjiPreArgs   = @()" in ps2
+    assert "$Global:DjiRunner" in ps
+    assert "-WindowStyle Normal" in ps
+    assert "dji-run.ps1" in ps

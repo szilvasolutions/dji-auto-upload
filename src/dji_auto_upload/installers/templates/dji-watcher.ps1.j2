@@ -12,10 +12,9 @@ $ErrorActionPreference = 'Continue'
 
 $Global:DjiVendorIds = @({% for v in vendor_ids %}'{{ v }}'{% if not loop.last %}, {% endif %}{% endfor %})
 $Global:DjiLabels    = @({% for l in labels %}'{{ l }}'{% if not loop.last %}, {% endif %}{% endfor %})
-$Global:DjiBinary    = '{{ binary }}'
-# Non-empty when the console script isn't on PATH and we launch through the
-# interpreter instead: python -m dji_auto_upload <command...>
-$Global:DjiPreArgs   = @({% for a in pre_args or [] %}'{{ a }}'{% if not loop.last %}, {% endif %}{% endfor %})
+# The runner script opens a visible console for the offload and reports the
+# outcome with a popup; the actual binary/interpreter details live in there.
+$Global:DjiRunner    = '{{ runner }}'
 $Global:DjiLogFile   = Join-Path $env:LOCALAPPDATA 'dji-auto-upload\watcher.log'
 
 function Global:Write-DjiLog($message) {
@@ -69,11 +68,12 @@ Register-WmiEvent -Class Win32_VolumeChangeEvent -SourceIdentifier DjiVolumeWatc
 
         Start-Sleep -Seconds 2
         if (Test-DjiVolume $drive) {
-            Write-DjiLog "DJI volume detected at $drive — starting offload"
-            $argList = @($Global:DjiPreArgs) + @('run', '--device', $drive)
-            Start-Process -FilePath $Global:DjiBinary `
-                          -ArgumentList $argList `
-                          -WindowStyle Hidden
+            Write-DjiLog "DJI volume detected at $drive — starting offload (visible window)"
+            # Visible on purpose: the user should SEE that something is happening.
+            Start-Process -FilePath 'powershell.exe' `
+                          -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass',
+                                          '-File', $Global:DjiRunner, '-Drive', $drive) `
+                          -WindowStyle Normal
         } else {
             Write-DjiLog "volume $drive arrived but is not a DJI volume — ignoring"
         }
