@@ -270,6 +270,8 @@ dji-auto-upload run --dry-run      # show the full plan, change nothing
 dji-auto-upload install-trigger    # install per-OS auto-trigger
 dji-auto-upload uninstall-trigger
 dji-auto-upload status             # config summary, rclone reachable, telegram reachable
+dji-auto-upload update             # pull the latest version and refresh the trigger
+dji-auto-upload uninstall          # remove the trigger, and optionally config + staged files
 dji-auto-upload diagnose           # write a support bundle to attach to a bug report
 dji-auto-upload test-notify        # send a test message
 dji-auto-upload prune              # manual stage prune

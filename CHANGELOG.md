@@ -6,6 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `dji-auto-upload update` upgrades in place and regenerates the auto-trigger
+  from the new templates. It drives `sys.executable -m pip`, so it works on
+  machines with several Pythons where a stale `pip.exe` launcher points at an
+  interpreter that has since been uninstalled ("Fatal error in launcher:
+  Unable to create process").
+- `dji-auto-upload uninstall` removes the trigger and, after asking, the config
+  and the local staging dir. It refuses to delete staged files that are not in
+  the `.uploaded` ledger — even with `--yes` — and lists them instead. Removing
+  the rclone remote is *not* covered by `--yes` and needs `--forget-remote`,
+  because `rclone config disconnect` revokes the token server-side and would
+  break any other tool or backup job that shares that remote.
 - Plugging in a drone on Windows now opens a visible console that streams the
   offload as it runs, and announces the outcome with a popup: success
   auto-dismisses after 5 seconds, failure stays on screen with the log path and

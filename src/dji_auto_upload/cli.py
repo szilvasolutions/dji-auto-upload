@@ -147,6 +147,119 @@ def uninstall_trigger(ctx: typer.Context) -> None:
 
 
 @app.command()
+def update(
+    source: str = typer.Option(
+        None, "--source", help="Where to install from. Defaults to the latest main."
+    ),
+    skip_trigger: bool = typer.Option(
+        False, "--skip-trigger", help="Don't refresh the auto-trigger afterwards."
+    ),
+) -> None:
+    """Update to the latest version and refresh the auto-trigger."""
+    from .selfmanage import DEFAULT_SOURCE
+    from .selfmanage import update as do_update
+
+    code = do_update(source or DEFAULT_SOURCE, reinstall_trigger=not skip_trigger)
+    if code != 0:
+        raise typer.Exit(code=code)
+
+
+@app.command()
+def uninstall(
+    ctx: typer.Context,
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Don't ask. Never deletes unuploaded files or the rclone remote."
+    ),
+    keep_config: bool = typer.Option(False, "--keep-config", help="Leave config in place."),
+    forget_remote: bool = typer.Option(
+        False,
+        "--forget-remote",
+        help="Also delete the rclone remote and revoke its access token.",
+    ),
+) -> None:
+    """Remove the auto-trigger, and optionally the config and staged files."""
+    from rich.prompt import Confirm
+
+    from .installers import uninstall as uninstall_trigger_impl
+    from .selfmanage import (
+        pip_uninstall_command,
+        rclone_forget,
+        remove_paths,
+        unuploaded_files,
+    )
+
+    cfg: Config = ctx.obj
+
+    console.print("[bold]Removing the auto-trigger…[/bold]")
+    uninstall_trigger_impl(cfg)
+
+    # Staged footage that never reached the cloud is the one thing here that is
+    # irreplaceable, so it gets its own explicit, defaulted-to-no question.
+    pending = unuploaded_files(cfg)
+    stage = cfg.paths.stage_dir
+    if pending:
+        console.print(
+            f"\n[bold yellow]{len(pending)} staged file(s) are NOT confirmed uploaded[/bold yellow] "
+            f"in {stage}:"
+        )
+        for name in pending[:10]:
+            console.print(f"  [yellow]{name}[/yellow]")
+        if len(pending) > 10:
+            console.print(f"  [dim]…and {len(pending) - 10} more[/dim]")
+        console.print("[dim]Copy them somewhere safe before deleting.[/dim]")
+        # --yes must not silently destroy footage that is nowhere else. Keeping
+        # it is recoverable; deleting it is not, so this one always asks.
+        drop_stage = False if yes else Confirm.ask("Delete them anyway?", default=False)
+        if yes:
+            console.print("[dim]Keeping the stage dir (--yes never deletes unuploaded files).[/dim]")
+    elif yes:
+        drop_stage = True
+    else:
+        drop_stage = Confirm.ask(
+            f"\nDelete the local staging dir ({stage})? Everything in it is uploaded.",
+            default=True,
+        )
+
+    to_remove: list[Path] = []
+    if drop_stage:
+        to_remove.append(stage)
+
+    if not keep_config:
+        drop_cfg = yes or Confirm.ask(
+            f"Delete config and credentials ({cfg.paths.config_dir})?", default=True
+        )
+        if drop_cfg:
+            to_remove += [cfg.paths.config_file, cfg.paths.credentials_file]
+
+    if to_remove:
+        remove_paths(to_remove)
+
+    # Deliberately NOT covered by --yes. The remote belongs to rclone, not to
+    # us: other tools and backup jobs on the same machine may depend on it, and
+    # `rclone config disconnect` revokes the OAuth token server-side, which no
+    # amount of restoring rclone.conf will undo. It takes its own explicit flag.
+    if cfg.remote.name and forget_remote:
+        console.print(
+            f"\n[bold yellow]About to remove the rclone remote {cfg.remote.name!r}.[/bold yellow]\n"
+            "This revokes its access token at the provider — anything else using "
+            "this remote (backup jobs, other tools) will stop working and will "
+            "need re-authorising."
+        )
+        if yes or Confirm.ask("Continue?", default=False):
+            rclone_forget(cfg.remote.name)
+    elif cfg.remote.name:
+        console.print(
+            f"\n[dim]Left the rclone remote {cfg.remote.name!r} alone. "
+            "Use --forget-remote to remove it and revoke its access.[/dim]"
+        )
+
+    console.print(
+        "\n[bold green]Done.[/bold green] To remove the program itself, run:\n"
+        f"  [cyan]{pip_uninstall_command()}[/cyan]"
+    )
+
+
+@app.command()
 def prune(ctx: typer.Context) -> None:
     """Manually prune local stage dirs that are past the retention cutoff."""
     from .cleanup import prune_stage
