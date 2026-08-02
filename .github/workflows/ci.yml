@@ -34,7 +34,6 @@ jobs:
 
       - name: Type check
         run: mypy src
-        continue-on-error: true   # mypy strictness is aspirational on day one
 
       - name: Test
         run: pytest -ra

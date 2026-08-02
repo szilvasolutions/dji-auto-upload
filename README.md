@@ -6,6 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Tested on Linux/macOS/Windows](https://img.shields.io/badge/tested-linux%20%7C%20macos%20%7C%20windows-success.svg)](#per-os-installation)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/szilvasolus)
 
 My DJI Neo 2 doesn't have an SD card. Everything it records lives on internal
 storage, and there are only two ways to get footage off it: the DJI app, which
@@ -283,6 +284,14 @@ The integration test (`tests/integration/test_offload_pipeline.py`) builds a
 synthetic DCIM tree, points the orchestrator at a fake rclone binary
 ([`tests/fixtures/fake_rclone.py`](tests/fixtures/fake_rclone.py)), and
 asserts ledger contents, file placement, and notifier event ordering.
+
+## Support this project
+
+This is free and I build it in my spare time. If it saved you the hassle of
+dragging files off a drone, or you want to nudge a feature along, you can buy me
+a coffee. Bug reports and pull requests are just as welcome.
+
+<a href="https://buymeacoffee.com/szilvasolus" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50" width="210"></a>
 
 ## License
 

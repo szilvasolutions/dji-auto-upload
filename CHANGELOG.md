@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+- Windows auto-trigger never fired: the `Register-WmiEvent` action scriptblock ran
+  in its own scope, so the `Test-DjiVolume` function and the vendor-ID/label config
+  it relied on were undefined at event time (the error was swallowed by
+  `$ErrorActionPreference = 'Continue'`). Detection is now inlined in the action
+  block and the config is passed in via `$using:`.
+- `uninstall-trigger` raised on the wrong OS (e.g. calling the Linux uninstaller on
+  Windows hit `os.geteuid`, which doesn't exist there). It now no-ops with a clear
+  message, matching `install-trigger`.
+
+### Changed
+- CI now enforces `mypy` (dropped `continue-on-error`); the tree type-checks clean
+  on Linux, macOS, and Windows.
+
 ## [0.1.0] - 2026-07-28
 
 Initial public release.

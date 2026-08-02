@@ -7,35 +7,46 @@ $VendorIds = @({% for v in vendor_ids %}'{{ v }}'{% if not loop.last %}, {% endi
 $Labels    = @({% for l in labels %}'{{ l }}'{% if not loop.last %}, {% endif %}{% endfor %})
 $Binary    = '{{ binary }}'
 
-function Test-DjiVolume($drive) {
-    if (Test-Path "$drive\DCIM") {
-        $children = Get-ChildItem -Path "$drive\DCIM" -Directory -ErrorAction SilentlyContinue
-        if ($children) { return $true }
-    }
-    try {
-        $vol = Get-Volume -DriveLetter ($drive[0]) -ErrorAction SilentlyContinue
-        if ($vol -and $Labels -contains $vol.FileSystemLabel) { return $true }
-    } catch {}
-    try {
-        $devices = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
-                   Where-Object { $_.InstanceId -match 'USB.*VID_([0-9A-Fa-f]{4})' }
-        foreach ($d in $devices) {
-            if ($d.InstanceId -match 'VID_([0-9A-Fa-f]{4})') {
-                $vid = $matches[1].ToLower()
-                if ($VendorIds -contains $vid) { return $true }
-            }
-        }
-    } catch {}
-    return $false
-}
+# NOTE: a Register-WmiEvent -Action scriptblock runs in its own scope. It cannot
+# see functions or variables from this script; only values imported with $using:
+# cross in, and $using: does not work for functions. So the detection logic is
+# inlined below and the config is pulled in via $using:VendorIds/$using:Labels.
 
 Register-WmiEvent -Class Win32_VolumeChangeEvent -SourceIdentifier DjiVolumeWatcher -Action {
     $eventType = $Event.SourceEventArgs.NewEvent.EventType
     if ($eventType -ne 2) { return }   # 2 = arrival
-    $drive = $Event.SourceEventArgs.NewEvent.DriveName
+    $drive     = $Event.SourceEventArgs.NewEvent.DriveName
+    $vendorIds = $using:VendorIds
+    $labels    = $using:Labels
+    $binary    = $using:Binary
     Start-Sleep -Seconds 2
-    if (Test-DjiVolume $drive) {
-        Start-Process $using:Binary -ArgumentList 'run','--device',$drive -WindowStyle Hidden
+
+    $isDji = $false
+    if (Test-Path "$drive\DCIM") {
+        $children = Get-ChildItem -Path "$drive\DCIM" -Directory -ErrorAction SilentlyContinue
+        if ($children) { $isDji = $true }
+    }
+    if (-not $isDji) {
+        try {
+            $vol = Get-Volume -DriveLetter ($drive[0]) -ErrorAction SilentlyContinue
+            if ($vol -and $labels -contains $vol.FileSystemLabel) { $isDji = $true }
+        } catch {}
+    }
+    if (-not $isDji) {
+        try {
+            $devices = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+                       Where-Object { $_.InstanceId -match 'USB.*VID_([0-9A-Fa-f]{4})' }
+            foreach ($d in $devices) {
+                if ($d.InstanceId -match 'VID_([0-9A-Fa-f]{4})') {
+                    $vid = $matches[1].ToLower()
+                    if ($vendorIds -contains $vid) { $isDji = $true; break }
+                }
+            }
+        } catch {}
+    }
+
+    if ($isDji) {
+        Start-Process $binary -ArgumentList 'run','--device',$drive -WindowStyle Hidden
     }
 } | Out-Null
 

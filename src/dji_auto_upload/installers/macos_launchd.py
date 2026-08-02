@@ -87,6 +87,9 @@ def install(cfg: Config, *, force: bool = False) -> None:
 
 
 def uninstall(cfg: Config) -> None:
+    if sys.platform != "darwin":
+        console.print("[red]macos_launchd installer called on non-macOS[/red]")
+        return
     plist = _plist_path()
     uid = os.getuid()
     subprocess.run(["launchctl", "bootout", f"gui/{uid}/{LABEL}"], capture_output=True, text=True)

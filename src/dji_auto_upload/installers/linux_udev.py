@@ -80,6 +80,9 @@ def install(cfg: Config, *, force: bool = False) -> None:
 
 
 def uninstall(cfg: Config) -> None:
+    if sys.platform != "linux" and not sys.platform.startswith("linux"):
+        console.print("[red]linux_udev installer called on non-Linux[/red]")
+        return
     if os.geteuid() != 0:
         console.print(
             f"[yellow]Need root to remove {UDEV_RULE_PATH}.[/yellow] "

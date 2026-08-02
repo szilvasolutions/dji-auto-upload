@@ -1,0 +1,8 @@
+# Renders the "Sponsor" button on the repo and the funding link in the sidebar.
+# Fill in your Buy Me a Coffee handle (the part after buymeacoffee.com/).
+buy_me_a_coffee: szilvasolus
+
+# Optional extras — uncomment and fill in if you also want these:
+# ko_fi: YOUR_KOFI_HANDLE
+# github: [szilvasolutions]           # requires enrolling in GitHub Sponsors first
+# custom: ["https://paypal.me/YOUR_HANDLE"]
