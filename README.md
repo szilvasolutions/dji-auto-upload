@@ -324,3 +324,12 @@ a coffee. Bug reports and pull requests are just as welcome.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+Uploads are performed by [rclone](https://rclone.org), which is a separate
+MIT-licensed program that you install yourself; this project runs it, it does
+not include it.
+
+DJI, Mavic, Mini, Air, Avata, Neo and Osmo are trademarks of SZ DJI Technology
+Co., Ltd. This is an independent hobby project and is **not affiliated with,
+authorised by, or endorsed by DJI**. The name describes what the tool works
+with, nothing more.
