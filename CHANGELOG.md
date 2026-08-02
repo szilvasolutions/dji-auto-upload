@@ -3,6 +3,26 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- `dji-auto-upload diagnose` writes a single support bundle (versions, config,
+  rclone remotes, trigger state, stage summary, recent logs, and the Windows
+  watcher log) so a bug report can be one attachment instead of a back-and-forth.
+  The Telegram token and chat ID are redacted; local paths and media filenames
+  are included and the file says so.
+
+### Fixed
+- A slow rclone remote no longer aborts the run. The reachability probe used a
+  10s timeout on `rclone lsd`, which a cold cloud remote regularly exceeds
+  (measured: 2 of 10 probes hit the limit, and a first upload batch took 55s),
+  and the run then died claiming the credentials were bad. Whether the remote
+  exists in rclone.conf is now the only thing that aborts; a slow probe just
+  warns and lets rclone report any real error.
+- The Windows task XML is escaped, so an `&` in a username or install path no
+  longer makes the document malformed and fail `schtasks` with an opaque error.
+  Apostrophes in the binary path are escaped for the PowerShell watcher too.
+
 ## [0.2.0] - 2026-08-02
 
 ### Added

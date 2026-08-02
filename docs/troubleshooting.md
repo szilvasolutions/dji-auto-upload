@@ -164,6 +164,22 @@ rm ~/.local/share/dji-auto-upload/stage/2026-04-01/.uploaded
 # then plug in the drone (or run manually)
 ```
 
+## Reporting a problem (start here)
+
+```bash
+dji-auto-upload diagnose
+```
+
+That writes one file with everything needed to work out what went wrong:
+versions, your config, which rclone remotes exist, whether the auto-trigger is
+installed and what it points at, the state of the local stage, and the last 200
+log lines (plus the Windows watcher log, on Windows).
+
+Your Telegram bot token and chat ID are redacted. The file *does* contain local
+paths and media filenames, so glance over it before attaching it to an issue.
+Use `--show` to read it without writing a file, or `-o <path>` to choose where
+it goes.
+
 ## Where are the logs?
 
 | OS | Path |

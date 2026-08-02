@@ -156,6 +156,32 @@ def prune(ctx: typer.Context) -> None:
     console.print(f"Pruned {n} stage dir(s).")
 
 
+@app.command()
+def diagnose(
+    ctx: typer.Context,
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Where to write the bundle. Default: next to the log file."
+    ),
+    show: bool = typer.Option(False, "--show", help="Print the bundle instead of writing it."),
+) -> None:
+    """Collect a support bundle (versions, config, logs) into one shareable file.
+
+    Secrets are redacted. Attach the file when reporting a problem.
+    """
+    from .diagnostics import build_report, write_report
+
+    cfg: Config = ctx.obj
+    if show:
+        console.print(build_report(cfg))
+        return
+    path = write_report(cfg, output)
+    console.print(f"[green]Wrote support bundle to[/green] {path}")
+    console.print(
+        "[dim]Telegram token and chat id are redacted. It does contain local paths "
+        "and media filenames — have a look before sharing it.[/dim]"
+    )
+
+
 @app.command(hidden=True)
 def _watch(ctx: typer.Context) -> None:
     """Internal: macOS LaunchAgent entry point — resident DiskArbitration watcher."""
