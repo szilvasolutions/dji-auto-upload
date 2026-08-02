@@ -94,3 +94,16 @@ def test_unsafe_config_path_is_not_embedded_in_the_root_owned_rule(
     for evil in ('/home/a b/.config"; rm -rf /', "/home/x'y/.config", "relative/path"):
         assert not linux_udev._SAFE_PATH_RE.match(evil)
     assert linux_udev._SAFE_PATH_RE.match("/home/adam/.config/dji-auto-upload")
+
+
+def test_rule_points_rclone_at_the_users_config() -> None:
+    """The triggered run is root, so rclone would resolve remotes from /root and
+    report the user's remote as unreachable."""
+    from dji_auto_upload.installers.linux_udev import _render_rule
+
+    rule = _render_rule(
+        "/usr/bin/dji-auto-upload", ("2ca3",), (), None, "/home/adam/.config/rclone/rclone.conf"
+    )
+    assert "--setenv=RCLONE_CONFIG=/home/adam/.config/rclone/rclone.conf" in rule
+    # And is omitted entirely when we have nothing to point at.
+    assert "RCLONE_CONFIG" not in _render_rule("/usr/bin/dji-auto-upload", ("2ca3",), (), None, None)

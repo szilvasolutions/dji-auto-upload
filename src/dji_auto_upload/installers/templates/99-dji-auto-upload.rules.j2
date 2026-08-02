@@ -11,11 +11,12 @@
 # uses the settings the user actually configured.
 
 {% set cfg_opt = "--config " ~ config_dir ~ " " if config_dir else "" %}
+{%- set env_opt = "--setenv=RCLONE_CONFIG=" ~ rclone_config ~ " " if rclone_config else "" %}
 {%- for vid in vendor_ids %}
 ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", ATTRS{idVendor}=="{{ vid }}", \
-    RUN+="/bin/systemd-run --no-block --collect --slice=dji-auto-upload.slice --unit=dji-auto-upload-%k {{ binary }} {{ cfg_opt }}run --device /dev/%k"
+    RUN+="/bin/systemd-run --no-block --collect --slice=dji-auto-upload.slice {{ env_opt }}--unit=dji-auto-upload-%k {{ binary }} {{ cfg_opt }}run --device /dev/%k"
 {% endfor %}
 {% for label in labels -%}
 ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_LABEL}=="{{ label }}", \
-    RUN+="/bin/systemd-run --no-block --collect --slice=dji-auto-upload.slice --unit=dji-auto-upload-%k {{ binary }} {{ cfg_opt }}run --device /dev/%k"
+    RUN+="/bin/systemd-run --no-block --collect --slice=dji-auto-upload.slice {{ env_opt }}--unit=dji-auto-upload-%k {{ binary }} {{ cfg_opt }}run --device /dev/%k"
 {% endfor %}

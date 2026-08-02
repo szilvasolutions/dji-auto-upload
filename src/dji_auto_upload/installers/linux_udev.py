@@ -46,6 +46,7 @@ def _render_rule(
     vendor_ids: tuple[str, ...],
     labels: tuple[str, ...],
     config_dir: str | None = None,
+    rclone_config: str | None = None,
 ) -> str:
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
@@ -57,7 +58,29 @@ def _render_rule(
         vendor_ids=list(vendor_ids),
         labels=list(labels),
         config_dir=config_dir,
+        rclone_config=rclone_config,
     )
+
+
+def _sudo_user_rclone_config() -> str | None:
+    """Path to the invoking user's rclone.conf, for the root-triggered run.
+
+    Our own --config only covers *our* settings. rclone resolves its remotes
+    from $HOME, and the triggered run's HOME is root's — so without this it
+    looks for the remote in /root/.config/rclone/rclone.conf and reports the
+    user's remote as unreachable.
+    """
+    sudo_user = os.environ.get("SUDO_USER")
+    if not sudo_user or sudo_user == "root":
+        return None
+    try:
+        home = Path(f"~{sudo_user}").expanduser()
+    except RuntimeError:
+        return None
+    conf = home / ".config" / "rclone" / "rclone.conf"
+    if not conf.is_file():
+        return None
+    return str(conf) if _SAFE_PATH_RE.match(str(conf)) else None
 
 
 def _sudo_user_config_dir() -> Path | None:
@@ -127,12 +150,23 @@ def install(cfg: Config, *, force: bool = False) -> None:
         console.print(
             "[yellow]No config found for the triggered run.[/yellow] udev runs the "
             f"offload as root, which reads /etc/{APP_NAME}/{CONFIG_FILENAME}.\n"
-            "Run [cyan]dji-auto-upload setup[/cyan] as your normal user first, then "
-            "re-run this with [cyan]sudo -E[/cyan] so it can find your config — "
-            f"otherwise the trigger falls back to built-in defaults."
+            "Run [cyan]dji-auto-upload setup[/cyan] as your normal user, then re-run "
+            "[cyan]sudo dji-auto-upload install-trigger[/cyan] so it can pick your "
+            "config up — otherwise the trigger falls back to built-in defaults."
         )
+
+    rclone_config = _sudo_user_rclone_config()
+    if rclone_config:
+        console.print(f"[green]Trigger will use rclone config[/green] {rclone_config}")
+    elif os.environ.get("SUDO_USER") not in (None, "", "root"):
+        console.print(
+            "[yellow]Couldn't find your rclone.conf.[/yellow] The triggered run is root, "
+            "so rclone would look in /root and report your remote as unreachable.\n"
+            "Run [cyan]rclone config[/cyan] as your normal user, then re-run this."
+        )
+
     rule_text = _render_rule(
-        binary, cfg.detect.vendor_ids, cfg.detect.volume_labels, config_dir
+        binary, cfg.detect.vendor_ids, cfg.detect.volume_labels, config_dir, rclone_config
     )
     UDEV_RULE_PATH.parent.mkdir(parents=True, exist_ok=True)
     UDEV_RULE_PATH.write_text(rule_text, encoding="utf-8")
