@@ -127,8 +127,10 @@ def _pick_remote(doc: tomlkit.TOMLDocument) -> tuple[str, str]:
                 "Drive, Dropbox, OneDrive, S3, a NAS, and ~70 other backends. Pick whichever\n"
                 "you like — [cyan]rclone config[/cyan] walks you through it, and most are a single\n"
                 "browser sign-in.\n\n"
-                "[dim]See the README “Setting up rclone” section for a per-provider guide,\n"
-                "including the extra step Google Photos needs for its own upload quota.[/dim]",
+                "[dim]Stuck? rclone's own guides cover every provider step by step:\n"
+                "https://rclone.org/docs/#configure  (e.g. https://rclone.org/drive/)\n"
+                "The README “Setting up rclone” section has the short version, including\n"
+                "the extra step Google Photos needs for its own upload quota.[/dim]",
                 title="Choose your cloud",
                 border_style="blue",
             )

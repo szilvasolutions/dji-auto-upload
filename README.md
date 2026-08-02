@@ -125,6 +125,11 @@ Give the remote a name (e.g. `gdrive`) and use that name in setup. In the
 config, a path template like `DJI/{date}` files each day's clips into its own
 folder.
 
+Stuck, or using a provider not covered here? rclone's own docs have a
+step-by-step page for every backend: **[rclone.org/docs — Configure](https://rclone.org/docs/#configure)**
+(for example [Google Drive](https://rclone.org/drive/),
+[Dropbox](https://rclone.org/dropbox/), [OneDrive](https://rclone.org/onedrive/)).
+
 <details>
 <summary><b>Advanced path: Google Photos (extra step, worth knowing)</b></summary>
 
