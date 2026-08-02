@@ -29,6 +29,10 @@ class AppPaths:
     data_dir: Path
     log_dir: Path
     runtime_dir: Path
+    # Set from `[paths] stage_dir` so footage can be staged somewhere the user
+    # actually wants it — a big drive, or a folder they can find — instead of
+    # being buried in a platform data directory.
+    stage_dir_override: Path | None = None
 
     @property
     def config_file(self) -> Path:
@@ -40,7 +44,7 @@ class AppPaths:
 
     @property
     def stage_dir(self) -> Path:
-        return self.data_dir / "stage"
+        return self.stage_dir_override or (self.data_dir / "stage")
 
     @property
     def log_file(self) -> Path:

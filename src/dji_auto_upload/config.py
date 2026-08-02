@@ -70,6 +70,18 @@ enabled = false                              # set to true once Telegram credent
 backend = "telegram"
 events  = ["start", "done_copy", "done_upload", "done", "fail"]
 
+[paths]
+# Where footage is kept on this computer while it uploads. Leave empty for the
+# platform default (Windows: %LOCALAPPDATA%, macOS: ~/Library/Application
+# Support, Linux: ~/.local/share — or /var/lib when run by the system trigger).
+# Point it at a big drive or a folder you can actually find, e.g.
+#   Windows: 'D:\\DJI'      macOS/Linux: '~/Videos/DJI'
+# Use single quotes on Windows: in double quotes a backslash starts an escape
+# and TOML will reject the line.
+# Files are deleted from here once retention.stage_days has passed AND the
+# upload is confirmed, so this is a staging area, not your archive.
+stage_dir = ""
+
 [logging]
 level        = "INFO"
 max_bytes    = 5000000
@@ -236,6 +248,11 @@ def load(paths: AppPaths | None = None) -> Config:
             doc = tomlkit.parse(p.config_file.read_text(encoding="utf-8"))
         except Exception as exc:
             raise ConfigError(f"could not parse {p.config_file}: {exc}") from exc
+        # A user-chosen staging folder has to be applied to the paths object
+        # before anything reads cfg.paths.stage_dir.
+        custom_stage = str(doc.get("paths", {}).get("stage_dir", "") or "").strip()
+        if custom_stage:
+            p = replace(p, stage_dir_override=Path(custom_stage).expanduser())
         cfg = replace(_parse_config_doc(doc), paths=p)
 
     if p.credentials_file.is_file():

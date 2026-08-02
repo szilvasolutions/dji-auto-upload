@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-08-02
+
+### Added
+- Setup now asks where footage should be kept on this computer, and the choice
+  is stored as `[paths] stage_dir`. The platform data directory is a poor
+  default for multi-gigabyte video — people want it on a drive with room, or
+  somewhere they can actually find. The folder is created and write-tested
+  during setup rather than failing mid-offload, and free space is reported.
+- The "where in the cloud" question spells out what it does, with worked
+  examples of how `{date}` expands, and the summary shows the full destination
+  (`remote:path`) alongside the local folder.
+
 ## [0.3.2] - 2026-08-02
 
 ### Fixed
@@ -198,6 +210,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.4.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.2.0...v0.3.0

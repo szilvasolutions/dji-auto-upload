@@ -62,6 +62,7 @@ def run_wizard(cfg: Config) -> None:
 
     _check_rclone()
     remote_name, path_template = _pick_remote(doc)
+    stage_dir = _local_folder(doc, cfg)
     _retention(doc)
     save_config_doc(cfg.paths.config_file, doc)
     console.print(f"[green]Saved[/green] {cfg.paths.config_file}")
@@ -73,7 +74,7 @@ def run_wizard(cfg: Config) -> None:
     save_config_doc(cfg.paths.config_file, doc)
 
     _install_trigger_prompt()
-    _summary(remote_name, path_template, doc)
+    _summary(remote_name, path_template, doc, stage_dir)
 
 
 # ---- Wizard sections ------------------------------------------------------
@@ -146,18 +147,72 @@ def _pick_remote(doc: tomlkit.TOMLDocument) -> tuple[str, str]:
     else:
         console.print("[yellow]could not list — credentials may need a refresh[/yellow]")
 
-    # Path template.
+    # Path template — where inside the remote the clips land.
     suggested = "album/DJI-{date}" if "photos" in chosen.lower() else "DJI/{date}"
     if current_template:
         suggested = current_template
-    template = Prompt.ask(
-        "Remote path template ([dim]{date} expands to YYYY-MM-DD[/dim])",
-        default=suggested,
+    console.print(
+        f"\n[bold]Where should clips go inside [cyan]{chosen}:[/cyan]?[/bold]\n"
+        "[dim]{date} expands to the recording date, so each day gets its own folder.\n"
+        f"  DJI/{{date}}          -> {chosen}:DJI/2026-08-02/\n"
+        f"  Drone/Raw/{{date}}    -> {chosen}:Drone/Raw/2026-08-02/\n"
+        "  album/DJI-{date}     -> a separate album per day (Google Photos)\n"
+        "Leave out {date} to put everything in one folder.[/dim]"
     )
+    template = Prompt.ask("Remote path", default=suggested)
 
     remote_table["name"] = chosen
     remote_table["path_template"] = template
     return chosen, template
+
+
+def _local_folder(doc: tomlkit.TOMLDocument, cfg: Config) -> Path:
+    """Ask where footage should be staged on this computer."""
+    console.print()
+    console.print(
+        Panel(
+            "Clips are copied here first, then uploaded. Pick a drive with room —\n"
+            "a flight can easily be several GB.\n\n"
+            "[dim]This is a staging area, not an archive: once a file is confirmed\n"
+            "uploaded and the retention period passes, it is deleted from here.[/dim]",
+            title="Where to keep footage on this computer",
+            border_style="blue",
+        )
+    )
+
+    paths_table = doc.get("paths")
+    if paths_table is None:
+        paths_table = tomlkit.table()
+        doc["paths"] = paths_table
+
+    current = str(paths_table.get("stage_dir", "") or "").strip()
+    default = current or str(cfg.paths.stage_dir)
+
+    while True:
+        answer = Prompt.ask("Folder", default=default).strip()
+        if not answer:
+            return cfg.paths.stage_dir
+        chosen = Path(answer).expanduser()
+        try:
+            chosen.mkdir(parents=True, exist_ok=True)
+            # Prove it is writable now, rather than failing mid-offload later.
+            probe = chosen / ".dji-write-test"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+        except OSError as exc:
+            console.print(f"[red]Can't use that folder:[/red] {exc}")
+            continue
+
+        free_gb = shutil.disk_usage(chosen).free // (1024**3)
+        console.print(f"[green]Using[/green] {chosen}  [dim]({free_gb} GB free)[/dim]")
+        if free_gb < 5:
+            console.print("[yellow]That's under 5 GB free — a single flight may not fit.[/yellow]")
+
+        # Only record an override when it differs from the platform default, so
+        # the config stays portable if the user moves between machines.
+        default_stage = cfg.paths.data_dir / "stage"
+        paths_table["stage_dir"] = "" if chosen == default_stage else str(chosen)
+        return chosen
 
 
 def _run_rclone_config() -> None:
@@ -322,13 +377,14 @@ def _install_trigger_prompt() -> None:
         console.print(f"[red]{exc}[/red]")
 
 
-def _summary(remote: str, template: str, doc: tomlkit.TOMLDocument) -> None:
+def _summary(remote: str, template: str, doc: tomlkit.TOMLDocument, stage_dir: Path) -> None:
     table = Table(title="Setup summary", show_header=False, box=None)
     table.add_column("key", style="cyan")
     table.add_column("value")
     retention = doc.get("retention", {})
     table.add_row("rclone remote", remote)
-    table.add_row("path template", template)
+    table.add_row("uploads to", f"{remote}:{template}")
+    table.add_row("local folder", str(stage_dir))
     table.add_row("stage retention", f"{retention.get('stage_days', 2)} day(s)")
     table.add_row("drone retention", f"{retention.get('drone_days', 1)} day(s)")
     console.print()

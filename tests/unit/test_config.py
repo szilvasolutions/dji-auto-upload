@@ -70,3 +70,41 @@ def test_inhibit_sleep_defaults_on_and_can_be_disabled(tmp_app_paths: AppPaths) 
         "[behaviour]\ninhibit_sleep = false\n", encoding="utf-8"
     )
     assert load(tmp_app_paths).behaviour.inhibit_sleep is False
+
+
+def test_stage_dir_defaults_to_the_platform_location(tmp_app_paths: AppPaths) -> None:
+    cfg = load(tmp_app_paths)
+    assert cfg.paths.stage_dir == tmp_app_paths.data_dir / "stage"
+
+
+def test_stage_dir_can_be_pointed_somewhere_else(tmp_app_paths: AppPaths, tmp_path) -> None:
+    """People want footage on a drive with room, or somewhere they can find it."""
+    target = tmp_path / "big-drive" / "DJI"
+    tmp_app_paths.config_file.write_text(
+        f'[paths]\nstage_dir = "{target.as_posix()}"\n', encoding="utf-8"
+    )
+    cfg = load(tmp_app_paths)
+    assert cfg.paths.stage_dir == target
+
+
+def test_empty_stage_dir_falls_back_to_the_default(tmp_app_paths: AppPaths) -> None:
+    tmp_app_paths.config_file.write_text('[paths]\nstage_dir = ""\n', encoding="utf-8")
+    cfg = load(tmp_app_paths)
+    assert cfg.paths.stage_dir == tmp_app_paths.data_dir / "stage"
+
+
+def test_stage_dir_expands_a_tilde(tmp_app_paths: AppPaths) -> None:
+    tmp_app_paths.config_file.write_text(
+        '[paths]\nstage_dir = "~/DroneFootage"\n', encoding="utf-8"
+    )
+    cfg = load(tmp_app_paths)
+    assert "~" not in str(cfg.paths.stage_dir)
+    assert cfg.paths.stage_dir.is_absolute()
+
+
+def test_a_windows_path_in_literal_quotes_round_trips(tmp_app_paths: AppPaths) -> None:
+    """In TOML double quotes a backslash starts an escape, so `"D:\\DJI"` is a
+    parse error; single-quoted literal strings are what users must write."""
+    tmp_app_paths.config_file.write_text("[paths]\nstage_dir = 'D:\\DJI'\n", encoding="utf-8")
+    cfg = load(tmp_app_paths)
+    assert str(cfg.paths.stage_dir).replace("/", "\\").endswith("D:\\DJI")

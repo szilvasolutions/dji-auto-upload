@@ -236,6 +236,12 @@ Edit it freely; comments survive `dji-auto-upload setup` re-runs.
 name = "gphotos"
 path_template = "album/DJI-{date}"   # {date} expands to YYYY-MM-DD
 
+[paths]
+# Where clips are kept on this computer while they upload. Empty = platform
+# default. Use single quotes on Windows: in double quotes a backslash starts
+# a TOML escape and the line is rejected.
+stage_dir = ''     # e.g. 'D:\\DJI' on Windows, '~/Videos/DJI' elsewhere
+
 [retention]
 stage_days = 2     # delete local copies N days after upload (0 = keep forever)
 drone_days = 0     # delete drone files older than N days (0 = never touch the drone)
