@@ -109,9 +109,14 @@ def install(cfg: Config, *, force: bool = False) -> None:
     )
     # The task launches this, not PowerShell — see the template for why.
     launcher = watcher.with_name("dji-watcher-launch.vbs")
+    # ASCII, and crucially NO BOM: VBScript cannot parse a UTF-8 BOM (wscript
+    # dies with "Invalid character" on line 1, and //B hides the dialog, so it
+    # fails in total silence). The .ps1 files above DO need the BOM; this must
+    # not have one.
     launcher.write_text(
         _render("dji-watcher-launch.vbs.j2", watcher_path=str(watcher).replace('"', '""')),
-        encoding="utf-8-sig",
+        encoding="ascii",
+        errors="replace",
     )
     for f in (watcher, worker, viewer, launcher):
         console.print(f"[green]Wrote[/green] {f}")
@@ -172,10 +177,25 @@ def install(cfg: Config, *, force: bool = False) -> None:
         text=True,
     )
     if started.returncode == 0:
-        console.print(
-            "[bold green]Watcher installed and armed.[/bold green] Plug in your drone — "
-            "a progress window opens (safe to close), and you'll get a popup when it's done."
-        )
+        # schtasks /run reports success even when the launched process dies
+        # immediately, so confirm the watcher really came up rather than
+        # printing a reassurance we cannot stand behind.
+        import time
+
+        time.sleep(4)
+        alive = _watcher_is_running()
+        if alive:
+            console.print(
+                "[bold green]Watcher installed and running.[/bold green] Plug in your drone — "
+                "a progress window opens (safe to close), and you'll get a popup when it's done."
+            )
+        else:
+            log_file = watcher.with_name("watcher.log")
+            console.print(
+                "[yellow]The task started but no watcher process is running.[/yellow]\n"
+                f"Check [cyan]{log_file}[/cyan], or run the watcher by hand to see the error:\n"
+                f"  [cyan]powershell -ExecutionPolicy Bypass -File \"{watcher}\"[/cyan]"
+            )
     else:
         console.print(
             "[bold green]Scheduled Task installed[/bold green], but it could not be started "
@@ -183,6 +203,20 @@ def install(cfg: Config, *, force: bool = False) -> None:
             "Sign out and back in, or run "
             "[cyan]schtasks /run /tn \"DJI Auto Upload Watcher\"[/cyan]."
         )
+
+
+def _watcher_is_running() -> bool:
+    """True if a powershell process is running our watcher script."""
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "@(Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | "
+             "Where-Object { $_.CommandLine -like '*dji-watcher.ps1*' }).Count"],
+            capture_output=True, text=True, timeout=30,
+        )
+        return proc.returncode == 0 and proc.stdout.strip().isdigit() and int(proc.stdout.strip()) > 0
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def uninstall(cfg: Config) -> None:

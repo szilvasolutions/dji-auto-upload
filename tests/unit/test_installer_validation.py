@@ -285,3 +285,22 @@ def test_watcher_holds_a_single_instance_mutex() -> None:
     )
     assert "System.Threading.Mutex" in ps
     assert "already running" in ps
+
+
+def test_vbs_launcher_is_pure_ascii_and_gets_no_bom() -> None:
+    """VBScript cannot parse a UTF-8 BOM: wscript dies with 'Invalid character'
+    on line 1 and //B hides the dialog, so the watcher never starts and nothing
+    is logged anywhere. The .ps1 files need a BOM; this file must not have one."""
+    import inspect
+
+    from dji_auto_upload.installers import windows_task as w
+
+    vbs = w._render("dji-watcher-launch.vbs.j2", watcher_path=r"C:\x\dji-watcher.ps1")
+    assert vbs.isascii(), [c for c in vbs if not c.isascii()]
+    assert not vbs.encode("ascii").startswith(b"\xef\xbb\xbf")
+
+    # And the installer must write it without a BOM.
+    src = inspect.getsource(w.install)
+    launcher_block = src[src.index("dji-watcher-launch.vbs.j2"):]
+    launcher_block = launcher_block[: launcher_block.index(")")]
+    assert "utf-8-sig" not in launcher_block

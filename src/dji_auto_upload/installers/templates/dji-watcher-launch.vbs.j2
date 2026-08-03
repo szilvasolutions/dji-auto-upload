@@ -1,14 +1,18 @@
 ' dji-auto-upload watcher launcher.
 '
-' The Scheduled Task runs THIS, not PowerShell directly. `powershell.exe
-' -WindowStyle Hidden` still allocates a console window before it parses that
-' flag, so a console flashes up and stays — and a user who closes it kills the
+' The Scheduled Task runs THIS, not PowerShell directly. "powershell.exe
+' -WindowStyle Hidden" still allocates a console window before it parses that
+' flag, so a console appeared and stayed - and a user who closed it killed the
 ' watcher, which is exactly what happened in the field.
 '
 ' WScript.Shell.Run with intWindowStyle 0 creates no window at all. This script
 ' spawns the watcher and exits immediately; the watcher itself holds a
 ' single-instance mutex, so the task's 5-minute repetition can safely re-run
 ' this without stacking up watchers.
+'
+' NOTE: this file must be written WITHOUT a BOM and must stay pure ASCII.
+' VBScript cannot parse a UTF-8 BOM - wscript fails with "Invalid character" on
+' line 1, and "//B" suppresses the dialog, so it fails completely silently.
 
 Dim shell
 Set shell = CreateObject("Wscript.Shell")

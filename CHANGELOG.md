@@ -3,6 +3,20 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.1] - 2026-08-03
+
+### Fixed
+- **0.6.0's watcher never started at all.** The new `.vbs` launcher was written
+  with a UTF-8 BOM, and VBScript cannot parse one — `wscript` fails with
+  "Invalid character" on line 1, and the `//B` switch suppresses the dialog, so
+  it failed in complete silence: no window, no process, not one log line. The
+  launcher is now written as plain ASCII with no BOM. (The `.ps1` files still
+  need their BOM; only this file must not have one.)
+- `install-trigger` now verifies a watcher process is actually running a few
+  seconds after starting the task, instead of reporting "armed" on the strength
+  of `schtasks /run` returning 0 — which it does even when the launched process
+  dies immediately.
+
 ## [0.6.0] - 2026-08-03
 
 ### Fixed
@@ -301,6 +315,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.6.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.5.0...v0.5.1
