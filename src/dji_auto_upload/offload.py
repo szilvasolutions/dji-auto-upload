@@ -43,7 +43,7 @@ from .notifier import Notifier, escape
 from .platform_glue import eject_volume, inhibit_sleep, remount_ro, remount_rw
 from .runstate import RunState, write_state
 from .stage import existing_stage_dirs, stage_dir_for
-from .upload import remote_configured, remote_reachable, upload_files
+from .upload import UploadStats, remote_configured, remote_reachable, upload_files
 
 log = logging.getLogger(__name__)
 
@@ -327,6 +327,19 @@ class OffloadRun:
             f"{len(all_dates)} album(s): {summary}",
         )
 
+        # Upload occupies the back half of the bar when a copy also ran; the
+        # whole bar when everything was already staged.
+        base_pct = 50.0 if self.total_new_count else 0.0
+        span = 100.0 - base_pct
+        albums_done = 0
+
+        def _upload_progress(st: UploadStats) -> None:
+            # rclone reports progress for the whole batch, so scale it into this
+            # album's slice of the run.
+            share = span / max(1, len(per_date))
+            pct = base_pct + albums_done * share + (st.percent / 100.0) * share
+            self._publish(percent=round(min(100.0, pct), 1), current=st.human())
+
         for d_name, basenames in per_date.items():
             stage = self.stage_base / d_name
             remote_path = self.config.remote.path_template.format(date=d_name)
@@ -336,7 +349,9 @@ class OffloadRun:
                 remote_path,
                 remote=self.config.remote,
                 behaviour=self.config.behaviour,
+                on_progress=_upload_progress,
             )
+            albums_done += 1
             album = f"DJI-{d_name}"
             # Ledger every confirmed file, even from a partially-failed batch —
             # the per-file dedup is what keeps Google Photos duplicate-free.
@@ -356,9 +371,10 @@ class OffloadRun:
             done_albums = list(self._rs.albums) if self._rs else []
             if album not in done_albums:
                 done_albums.append(album)
-            # Uploads are the second half; scale 50–100% across the albums.
-            up_pct = 50.0 + (len(done_albums) / max(1, len(per_date))) * 50.0
-            self._publish(albums=done_albums, current=album, percent=round(up_pct, 1))
+            self._publish(
+                albums=done_albums,
+                percent=round(min(100.0, base_pct + albums_done * (span / max(1, len(per_date)))), 1),
+            )
 
         if failed:
             ok_str = ", ".join(ok) if ok else "none"

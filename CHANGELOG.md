@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.1] - 2026-08-03
+
+### Fixed
+- **The progress bar never moved during an upload.** rclone's output was
+  captured with `capture_output=True`, which buffers everything until the
+  process exits — so a six-minute, 10.7 GB upload reported 0% the whole way and
+  the log showed every progress line stamped with the finish time. rclone's
+  stderr is now read live, its byte-level stats parsed (percent, transferred,
+  speed, ETA) and published to the progress window as they arrive. The bar moves
+  smoothly and shows e.g. `6.765 GiB / 7.920 GiB  61 MiB/s  ETA 19s`.
+- rclone now runs with `--stats-one-line`, which also cuts the log noise
+  substantially (a stats block per interval became one line).
+
 ## [0.7.0] - 2026-08-03
 
 ### Added
@@ -343,6 +356,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.7.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.6.0...v0.6.1

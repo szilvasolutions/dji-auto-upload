@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +34,59 @@ class UploadResult:
     # saw "exit code 1" and had to dig through a log to find e.g. an expired
     # token — the one line that actually tells them what to do.
     reason: str = ""
+
+
+@dataclass(frozen=True)
+class UploadStats:
+    """A point-in-time progress reading parsed from rclone's stats output."""
+
+    percent: float
+    transferred: str = ""
+    total: str = ""
+    speed: str = ""
+    eta: str = ""
+
+    def human(self) -> str:
+        bits = []
+        if self.transferred and self.total:
+            bits.append(f"{self.transferred} / {self.total}")
+        if self.speed:
+            bits.append(self.speed)
+        if self.eta:
+            bits.append(f"ETA {self.eta}")
+        return "  ".join(bits)
+
+
+# Matches both rclone's multi-line "Transferred: 3.164 GiB / 7.920 GiB, 40%, …"
+# and the compact --stats-one-line form, which omits the leading label.
+_STATS_RE = re.compile(
+    r"([\d.]+\s*[KMGTP]?i?B)\s*/\s*([\d.]+\s*[KMGTP]?i?B)\s*,\s*(\d+)\s*%"
+    r"(?:\s*,\s*([\d.]+\s*[KMGTP]?i?B/s))?"
+    r"(?:\s*,\s*ETA\s*(\S+))?"
+)
+
+
+def parse_stats(line: str) -> UploadStats | None:
+    """Extract a progress reading from one rclone output line, or None.
+
+    Deliberately ignores the per-file "Transferred: 2 / 3, 67%" counter — the
+    byte-based figure is what makes a progress bar move smoothly during a
+    multi-gigabyte transfer.
+    """
+    m = _STATS_RE.search(line)
+    if not m:
+        return None
+    try:
+        pct = float(m.group(3))
+    except (TypeError, ValueError):
+        return None
+    return UploadStats(
+        percent=max(0.0, min(100.0, pct)),
+        transferred=(m.group(1) or "").strip(),
+        total=(m.group(2) or "").strip(),
+        speed=(m.group(4) or "").strip(),
+        eta=(m.group(5) or "").strip(),
+    )
 
 
 def _explain(stderr: str) -> str:
@@ -127,6 +183,7 @@ def upload_files(
     *,
     remote: RemoteConfig,
     behaviour: BehaviourConfig,
+    on_progress: Callable[[UploadStats], None] | None = None,
 ) -> UploadResult:
     """Run `rclone copy --files-from <list>` and return the basenames that succeeded.
 
@@ -158,44 +215,64 @@ def upload_files(
         f"--retries={behaviour.upload_retries}",
         "--low-level-retries=10",
         "--log-level=INFO",
+        # Compact, frequent progress. Read live below so the progress window can
+        # actually move; the previous capture_output=True buffered every line
+        # until rclone exited, so a six-minute upload showed 0% throughout.
+        "--stats=2s",
+        "--stats-one-line",
     ]
     log.info("rclone copy %s → %s (%d file(s))", stage_dir, target, len(basenames))
 
+    stderr_lines: list[str] = []
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
-            capture_output=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=behaviour.upload_timeout_sec,
+            bufsize=1,  # line buffered: we need each stats line as it happens
         )
     except FileNotFoundError as exc:
         os.unlink(files_from_path)
         raise UploadError("rclone binary not found on PATH") from exc
-    except subprocess.TimeoutExpired:
-        os.unlink(files_from_path)
-        raise UploadError(
-            f"rclone timed out after {behaviour.upload_timeout_sec}s on {target}"
-        ) from None
+
+    deadline = time.monotonic() + behaviour.upload_timeout_sec
+    timed_out = False
+    try:
+        assert proc.stderr is not None
+        for raw in proc.stderr:
+            line = raw.rstrip("\n")
+            if line:
+                stderr_lines.append(line)
+                log.info("rclone: %s", line)
+                stats = parse_stats(line)
+                if stats is not None and on_progress is not None:
+                    on_progress(stats)
+            if time.monotonic() > deadline:
+                timed_out = True
+                proc.kill()
+                break
+        rc = proc.wait()
     finally:
         try:
             os.unlink(files_from_path)
         except OSError:
             pass
 
-    if proc.stdout:
-        for line in proc.stdout.splitlines():
-            log.debug("rclone: %s", line)
-    if proc.stderr:
-        for line in proc.stderr.splitlines():
-            log.info("rclone[stderr]: %s", line)
+    if timed_out:
+        raise UploadError(
+            f"rclone timed out after {behaviour.upload_timeout_sec}s on {target}"
+        )
 
-    if proc.returncode == 0:
+    stderr_text = "\n".join(stderr_lines)
+    if rc == 0:
         return UploadResult(succeeded=list(basenames), failed=[], rc=0)
 
-    reason = _explain(proc.stderr or "")
+    proc_returncode = rc
+    reason = _explain(stderr_text)
     if len(basenames) == 1:
         return UploadResult(
-            succeeded=[], failed=list(basenames), rc=proc.returncode, reason=reason
+            succeeded=[], failed=list(basenames), rc=proc_returncode, reason=reason
         )
 
     # Batch failed. rclone gives us no reliable per-file verdict, so retry each
@@ -204,14 +281,15 @@ def upload_files(
     # every duplicate upload becomes a duplicate photo).
     log.warning(
         "batch upload to %s failed (rc=%d) — retrying %d file(s) individually",
-        target, proc.returncode, len(basenames),
+        target, proc_returncode, len(basenames),
     )
     succeeded: list[str] = []
     failed: list[str] = []
     last_reason = reason
     for name in basenames:
         single = upload_files(
-            stage_dir, [name], remote_path, remote=remote, behaviour=behaviour
+            stage_dir, [name], remote_path, remote=remote, behaviour=behaviour,
+            on_progress=on_progress,
         )
         if single.rc == 0:
             succeeded.append(name)
