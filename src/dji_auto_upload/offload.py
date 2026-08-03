@@ -28,8 +28,14 @@ from .errors import (
     InsufficientSpace,
     OffloadError,
 )
-from .inventory import FileInfo, group_by_date, walk_dcim
-from .ledger import append_to_ledger, files_needing_upload, ledger_path, read_ledger
+from .inventory import FileInfo, assign_stage_names, group_by_date, walk_dcim
+from .ledger import (
+    LedgerEntry,
+    append_uploaded,
+    files_needing_upload,
+    ledger_path,
+    read_entries,
+)
 from .logging_setup import tail_log
 from .notifier import Notifier, escape
 from .platform_glue import eject_volume, inhibit_sleep, remount_ro, remount_rw
@@ -117,9 +123,13 @@ class OffloadRun:
 
         for d, files in by_date.items():
             stage = stage_dir_for(self.stage_base, d)
+            # Give every file in the date group a collision-free staged name
+            # BEFORE deciding what is new, so the destination check uses the same
+            # name the file will actually be copied and uploaded under.
+            files = assign_stage_names(files)
             pending = []
             for fi in files:
-                dest = stage / fi.path.name
+                dest = stage / fi.staged
                 if not dest.exists() or dest.stat().st_size != fi.size:
                     pending.append(fi)
                     total_new_count += 1
@@ -279,8 +289,11 @@ class OffloadRun:
             album = f"DJI-{d_name}"
             # Ledger every confirmed file, even from a partially-failed batch —
             # the per-file dedup is what keeps Google Photos duplicate-free.
+            # append_uploaded stamps each with its size and refuses to record a
+            # file that has vanished from the stage dir, so a name that rclone
+            # silently skipped (missing source, rc still 0) is never marked done.
             if result.succeeded:
-                append_to_ledger(stage, result.succeeded)
+                append_uploaded(stage, result.succeeded)
                 # Bump sentinel mtime so prune retention starts ticking from now.
                 ledger_path(stage).touch()
             if result.rc == 0:
@@ -333,9 +346,9 @@ class OffloadRun:
             return
 
         # Age makes a file a candidate; only ledger-confirmed uploads (or their
-        # sidecars) are actually deleted. This is what makes "we only delete
-        # what's safely in the cloud" literally true, file by file.
-        uploaded = self._ledgered_basenames()
+        # sidecars) are actually deleted, matched by name AND size. This is what
+        # makes "we only delete what's safely in the cloud" literally true.
+        uploaded = self._ledgered_entries()
         to_delete = select_deletable(
             candidates, uploaded, self.config.detect.sidecar_extensions
         )
@@ -374,11 +387,11 @@ class OffloadRun:
                 continue
         return out
 
-    def _ledgered_basenames(self) -> set[str]:
-        """Union of every stage dir's .uploaded ledger."""
-        out: set[str] = set()
+    def _ledgered_entries(self) -> list[LedgerEntry]:
+        """Every stage dir's .uploaded entries, unioned, for identity matching."""
+        out: list[LedgerEntry] = []
         for d in existing_stage_dirs(self.stage_base):
-            out |= read_ledger(d)
+            out.extend(read_entries(d))
         return out
 
     def _eject(self) -> bool:
@@ -425,10 +438,12 @@ class OffloadRun:
         behaviour = self.config.behaviour
         days = self.config.retention.drone_days
         if behaviour.delete_drone_files and days > 0:
-            candidates = files_older_than(self.dcim, days)
+            candidates = [
+                f for d in (self.dcim_dirs or [self.dcim]) for f in files_older_than(d, days)
+            ]
             if candidates and drone_clock_sane(self._all_drone_files()):
                 deletable = select_deletable(
-                    candidates, self._ledgered_basenames(),
+                    candidates, self._ledgered_entries(),
                     self.config.detect.sidecar_extensions,
                 )
                 lines.append(

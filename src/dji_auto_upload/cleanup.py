@@ -18,7 +18,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from .ledger import files_needing_upload, has_sentinel, ledger_path
+from .ledger import LedgerEntry, files_needing_upload, has_sentinel, ledger_path
 from .stage import existing_stage_dirs
 
 log = logging.getLogger(__name__)
@@ -109,21 +109,51 @@ def drone_clock_sane(files: list[Path], *, now: float | None = None) -> bool:
 
 def select_deletable(
     candidates: list[Path],
-    uploaded_basenames: set[str],
+    uploaded: list[LedgerEntry],
     sidecar_extensions: tuple[str, ...],
 ) -> list[Path]:
     """Filter age-eligible drone files down to the provably-safe-to-delete set.
 
-    A file is deletable only if:
-    - its basename appears in an .uploaded ledger (media, confirmed on remote), or
-    - it is a sidecar (.SRT/.LRF/...) whose paired video stem IS ledgered.
-    Anything else — un-uploaded media, unknown extensions — is left alone.
+    A drone file is deletable only if a ledger entry proves *that exact file*
+    reached the cloud — matched by name AND byte size, not name alone. Matching
+    on size is what keeps a same-named-but-different clip (a second DCIM folder,
+    a re-used filename after a card reset) from being deleted on the strength of
+    an unrelated upload.
+
+    The staged name may have been disambiguated on collision to
+    `<folder>__<basename>` (see inventory.assign_stage_names). At cleanup time we
+    know the drone file's own folder, so we test both its bare basename and the
+    folder-qualified form.
+
+    Sidecars (.SRT/.LRF/...) are never uploaded, so they are deletable when their
+    paired video — same stem, by identity — is ledgered.
     """
     sidecar_exts = {f".{e.lower().lstrip('.')}" for e in sidecar_extensions}
-    uploaded_stems = {Path(n).stem.lower() for n in uploaded_basenames}
+    # Stems (lowercased) of every ledgered video, for sidecar pairing. Includes
+    # the de-qualified stem so a `101MEDIA__DJI_0001.MP4` entry still pairs with
+    # `DJI_0001.SRT` sitting in 101MEDIA.
+    uploaded_stems: set[str] = set()
+    for e in uploaded:
+        stem = Path(e.staged_name).stem.lower()
+        uploaded_stems.add(stem)
+        if "__" in stem:
+            uploaded_stems.add(stem.split("__", 1)[1])
+
     out: list[Path] = []
     for f in candidates:
-        if f.name in uploaded_basenames or (f.suffix.lower() in sidecar_exts and f.stem.lower() in uploaded_stems):
+        try:
+            size = f.stat().st_size
+        except OSError:
+            log.info("drone cleanup: keeping %s (cannot stat)", f.name)
+            continue
+
+        names = {f.name, f"{f.parent.name}__{f.name}"}
+        is_uploaded_media = any(
+            e.staged_name in names and (e.size is None or e.size == size) for e in uploaded
+        )
+        is_paired_sidecar = f.suffix.lower() in sidecar_exts and f.stem.lower() in uploaded_stems
+
+        if is_uploaded_media or is_paired_sidecar:
             out.append(f)
         else:
             log.info("drone cleanup: keeping %s (not confirmed uploaded)", f.name)

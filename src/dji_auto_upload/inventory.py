@@ -23,10 +23,46 @@ class FileInfo:
     path: Path
     size: int
     mtime: float
+    # The name this file is staged/uploaded under. Normally the basename, but
+    # when two source files in the same date group share a basename (e.g.
+    # 100MEDIA/DJI_0001.MP4 and 101MEDIA/DJI_0001.MP4 — different files, same
+    # name) the later one is disambiguated so it can't overwrite the first in
+    # the stage dir. Set by assign_stage_names(); defaults to the basename.
+    stage_name: str = ""
 
     @property
     def name(self) -> str:
         return self.path.name
+
+    @property
+    def staged(self) -> str:
+        return self.stage_name or self.path.name
+
+
+def assign_stage_names(files: list[FileInfo]) -> list[FileInfo]:
+    """Give every file a stage_name that is unique within the list.
+
+    Bare basename when it is unique; otherwise `<parent-folder>__<basename>`,
+    and if that still clashes, a numeric suffix. This is what stops a second
+    DCIM folder's identically-named clip from silently overwriting the first.
+    """
+    from dataclasses import replace
+
+    taken: set[str] = set()
+    out: list[FileInfo] = []
+    for fi in files:
+        candidate = fi.path.name
+        if candidate in taken:
+            candidate = f"{fi.path.parent.name}__{fi.path.name}"
+            n = 1
+            base = candidate
+            while candidate in taken:
+                stem, dot, ext = base.partition(".")
+                candidate = f"{stem}_{n}{dot}{ext}"
+                n += 1
+        taken.add(candidate)
+        out.append(replace(fi, stage_name=candidate))
+    return out
 
 
 def find_dcim(volume: Path, dcim_subdirs: tuple[str, ...]) -> Path | None:

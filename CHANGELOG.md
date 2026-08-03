@@ -3,6 +3,25 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.1] - 2026-08-03
+
+### Fixed
+- **Footage loss when a card had more than one DCIM folder (regression in 0.3.1).**
+  A camera rolls over to `101MEDIA`, `102MEDIA`… every 999 files, and two folders
+  can hold different clips that share a basename (`DJI_0001.MP4`). They staged to
+  the same path so one overwrote the other, the flat ledger marked both uploaded,
+  and drone cleanup then erased the clip that was never sent. Files are now given a
+  collision-free staged name (`101MEDIA__DJI_0001.MP4`) and both reach the cloud.
+- **A re-used filename could be declared already-uploaded and trimmed off the
+  drone without being sent** (two drones on one computer, or a formatted card).
+  The ledger now records each file's byte size, and a same-named file whose size
+  differs is treated as new — uploaded, not skipped, and not deleted from the drone
+  until its own identity is confirmed in the cloud.
+- Drone cleanup matches a file by name AND size, so it can only ever delete a clip
+  that is provably in the cloud.
+- A file that vanished from the staging folder mid-run (rclone's `--files-from`
+  skips a missing source but still exits 0) is no longer recorded as uploaded.
+
 ## [0.4.0] - 2026-08-02
 
 ### Added
@@ -210,6 +229,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.4.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.3.0...v0.3.1

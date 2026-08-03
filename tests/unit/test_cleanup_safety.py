@@ -15,15 +15,20 @@ from dji_auto_upload.cleanup import (
     drone_clock_sane,
     select_deletable,
 )
+from dji_auto_upload.ledger import LedgerEntry
 
 SIDECARS = ("srt", "lrf")
 
 
-def _touch(p: Path, *, age_days: float = 0.0) -> Path:
-    p.write_bytes(b"x")
+def _touch(p: Path, *, age_days: float = 0.0, size: int = 1) -> Path:
+    p.write_bytes(b"x" * size)
     ts = time.time() - age_days * 86400
     os.utime(p, (ts, ts))
     return p
+
+
+def _led(*names: str, size: int = 1) -> list[LedgerEntry]:
+    return [LedgerEntry(n, size) for n in names]
 
 
 # ---- select_deletable ------------------------------------------------------
@@ -31,35 +36,53 @@ def _touch(p: Path, *, age_days: float = 0.0) -> Path:
 
 def test_uploaded_media_is_deletable(tmp_path: Path) -> None:
     f = _touch(tmp_path / "DJI_001.MP4")
-    out = select_deletable([f], {"DJI_001.MP4"}, SIDECARS)
-    assert out == [f]
+    assert select_deletable([f], _led("DJI_001.MP4"), SIDECARS) == [f]
 
 
 def test_unuploaded_media_is_kept(tmp_path: Path) -> None:
     f = _touch(tmp_path / "DJI_002.MP4")
-    assert select_deletable([f], {"DJI_001.MP4"}, SIDECARS) == []
+    assert select_deletable([f], _led("DJI_001.MP4"), SIDECARS) == []
+
+
+def test_same_name_different_size_is_kept(tmp_path: Path) -> None:
+    """The reuse hazard: a drone file whose name is ledgered but whose SIZE is
+    different is a different clip and must not be deleted."""
+    f = _touch(tmp_path / "DJI_001.MP4", size=2000)
+    assert select_deletable([f], _led("DJI_001.MP4", size=30), SIDECARS) == []
+
+
+def test_collision_folder_qualified_entry_matches_by_folder(tmp_path: Path) -> None:
+    """A clip staged as 101MEDIA__DJI_0001.MP4 (basename collision) is deletable
+    from its own 101MEDIA folder, matched by the folder-qualified staged name."""
+    d = tmp_path / "101MEDIA"
+    d.mkdir()
+    f = _touch(d / "DJI_0001.MP4", size=2000)
+    entries = _led("DJI_0001.MP4", size=1000) + _led("101MEDIA__DJI_0001.MP4", size=2000)
+    assert select_deletable([f], entries, SIDECARS) == [f]
+    # ...but the 100MEDIA twin (size 1000) is NOT deletable from 101MEDIA.
+    assert select_deletable([_touch(d / "OTHER.MP4", size=1000)], entries, SIDECARS) == []
 
 
 def test_sidecar_of_uploaded_video_is_deletable(tmp_path: Path) -> None:
     srt = _touch(tmp_path / "DJI_001.SRT")
     lrf = _touch(tmp_path / "DJI_001.LRF")
-    out = select_deletable([srt, lrf], {"DJI_001.MP4"}, SIDECARS)
+    out = select_deletable([srt, lrf], _led("DJI_001.MP4"), SIDECARS)
     assert set(out) == {srt, lrf}
 
 
 def test_orphan_sidecar_is_kept(tmp_path: Path) -> None:
     srt = _touch(tmp_path / "SOLO.SRT")
-    assert select_deletable([srt], {"DJI_001.MP4"}, SIDECARS) == []
+    assert select_deletable([srt], _led("DJI_001.MP4"), SIDECARS) == []
 
 
 def test_unknown_extension_is_kept(tmp_path: Path) -> None:
     other = _touch(tmp_path / "firmware.bin")
-    assert select_deletable([other], {"DJI_001.MP4", "firmware.mp4"}, SIDECARS) == []
+    assert select_deletable([other], _led("DJI_001.MP4", "firmware.mp4"), SIDECARS) == []
 
 
 def test_empty_ledger_deletes_nothing(tmp_path: Path) -> None:
     files = [_touch(tmp_path / n) for n in ("DJI_001.MP4", "DJI_001.SRT", "x.jpg")]
-    assert select_deletable(files, set(), SIDECARS) == []
+    assert select_deletable(files, [], SIDECARS) == []
 
 
 # ---- drone_clock_sane ------------------------------------------------------

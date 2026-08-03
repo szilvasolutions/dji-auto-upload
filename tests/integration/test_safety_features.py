@@ -30,7 +30,7 @@ from dji_auto_upload.config import (
     TelegramCredentials,
 )
 from dji_auto_upload.errors import OffloadError
-from dji_auto_upload.inventory import find_dcim
+from dji_auto_upload.inventory import find_dcim_dirs
 from dji_auto_upload.ledger import read_ledger
 from dji_auto_upload.offload import OffloadRun
 from dji_auto_upload.paths import AppPaths
@@ -66,9 +66,13 @@ def _make_config(paths: AppPaths, *, delete_drone: bool = False, drone_days: int
 
 def _run(cfg: Config, volume: Path, **kwargs: object) -> RecordingNotifier:
     notifier = RecordingNotifier()
-    dcim = find_dcim(volume, cfg.detect.dcim_subdirs)
-    assert dcim is not None
-    OffloadRun(config=cfg, notifier=notifier, volume=volume, dcim=dcim, **kwargs).execute()  # type: ignore[arg-type]
+    # Mirror the CLI: pass every media folder, not just the first.
+    dcim_dirs = find_dcim_dirs(volume, cfg.detect.dcim_subdirs)
+    assert dcim_dirs
+    OffloadRun(
+        config=cfg, notifier=notifier, volume=volume,
+        dcim=dcim_dirs[0], dcim_dirs=dcim_dirs, **kwargs,  # type: ignore[arg-type]
+    ).execute()
     return notifier
 
 
@@ -293,3 +297,46 @@ def test_inhibit_sleep_can_be_switched_off(
     _run(cfg, synth_volume)
 
     assert seen == [False]
+
+
+# ---- Multi-DCIM basename collision (footage-loss regression) ------------------
+
+
+def test_same_basename_in_two_dcim_folders_both_upload_and_trim_safely(
+    tmp_app_paths: AppPaths, synth_volume: Path, fake_rclone: Path,
+) -> None:
+    """Two DCIM folders can hold different clips that share a basename. Before
+    the identity-ledger fix the second overwrote the first in staging, the flat
+    ledger marked both 'uploaded', and drone cleanup erased the never-uploaded
+    one. This asserts both distinct files reach the cloud and both are trimmed."""
+    import os
+
+    dcim = synth_volume / "DCIM"
+    # Second rollover folder with a clip whose basename collides with 100MEDIA's.
+    second = dcim / "101MEDIA"
+    second.mkdir()
+    collide = second / "DJI_001.MP4"          # same name as 100MEDIA/DJI_001.MP4
+    collide.write_bytes(b"Z" * 4096)          # different content + size
+    os.utime(collide, os.stat(dcim / "100MEDIA" / "DJI_001.MP4")[-2:])  # same date
+
+    cfg = _make_config(tmp_app_paths, delete_drone=True, drone_days=0)
+    # drone_days=0 disables cleanup; enable via a tiny age by shifting mtimes back
+    cfg = _make_config(tmp_app_paths, delete_drone=True, drone_days=1)
+    for f in list((dcim / "100MEDIA").iterdir()) + list(second.iterdir()):
+        old = time.time() - 5 * 86400
+        os.utime(f, (old, old))
+
+    _run(cfg, synth_volume)
+
+    # Both distinct clips are in the cloud under distinct names.
+    cloud = fake_rclone / "testremote"
+    uploaded = {p.name: p.stat().st_size for p in cloud.rglob("*") if p.is_file()}
+    assert 16 in uploaded.values()            # the original 100MEDIA/DJI_001.MP4
+    assert 4096 in uploaded.values()          # the colliding 101MEDIA clip, NOT lost
+    # Two files named-from DJI_001 exist (one qualified) — nothing was overwritten.
+    dji001_like = [n for n in uploaded if n.endswith("DJI_001.MP4")]
+    assert len(dji001_like) == 2, uploaded
+
+    # Both drone copies were confirmed-uploaded and removed; none left behind wrongly.
+    assert not (dcim / "100MEDIA" / "DJI_001.MP4").exists()
+    assert not (second / "DJI_001.MP4").exists()

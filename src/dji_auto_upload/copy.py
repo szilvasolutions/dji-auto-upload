@@ -112,11 +112,15 @@ def copy_files(
     timeout_sec: int,
     on_progress: Callable[[FileInfo], None] | None = None,
 ) -> CopyResult:
-    """Copy each FileInfo to `dest_dir/<basename>`. Skips files already at the right size."""
+    """Copy each FileInfo to `dest_dir/<staged-name>`. Skips files already at the right size.
+
+    Uses fi.staged, not the raw basename, so two source files that share a name
+    (a second DCIM folder) never overwrite each other in the stage dir.
+    """
     dest_dir.mkdir(parents=True, exist_ok=True)
     result = CopyResult()
     for fi in files:
-        dest = dest_dir / fi.path.name
+        dest = dest_dir / fi.staged
         if not needs_copy(fi, dest):
             result.skipped += 1
             continue

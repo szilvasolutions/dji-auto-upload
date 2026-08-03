@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from dji_auto_upload.cleanup import dirs_to_prune, prune_stage
-from dji_auto_upload.ledger import append_to_ledger
+from dji_auto_upload.ledger import append_uploaded
 
 
 def _make_stage(base: Path, name: str, *, sentinel_age_days: float | None) -> Path:
@@ -13,7 +13,7 @@ def _make_stage(base: Path, name: str, *, sentinel_age_days: float | None) -> Pa
     d.mkdir(parents=True, exist_ok=True)
     (d / "DJI_001.MP4").write_bytes(b"x")
     if sentinel_age_days is not None:
-        append_to_ledger(d, ["DJI_001.MP4"])
+        append_uploaded(d, ["DJI_001.MP4"])
         ts = (datetime.now() - timedelta(days=sentinel_age_days)).timestamp()
         os.utime(d / ".uploaded", (ts, ts))
     return d
