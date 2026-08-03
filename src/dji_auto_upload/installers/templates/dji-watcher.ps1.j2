@@ -105,6 +105,15 @@ function Start-Offload($drive) {
     }
 }
 
+# Single instance. The task repeats every 5 minutes to revive a dead watcher,
+# and the launcher exits immediately, so without this every repetition would
+# stack another watcher on top of the running one.
+$mutex = New-Object System.Threading.Mutex($false, 'DjiAutoUploadWatcher')
+if (-not $mutex.WaitOne(0)) {
+    Write-DjiLog "another watcher is already running - this instance is exiting"
+    exit 0
+}
+
 Write-DjiLog "watcher started (worker: $Worker, poll: ${PollSeconds}s)"
 
 # Anything already plugged in when we start counts as an arrival. Plugging the

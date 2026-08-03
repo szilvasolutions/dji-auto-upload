@@ -46,5 +46,5 @@ jobs:
           python -m build --wheel --outdir dist
           python -m pip install --force-reinstall dist/*.whl
           dji-auto-upload version
-          python -c "from pathlib import Path; import dji_auto_upload.installers as i; s={p.name for p in (Path(i.__file__).parent/'templates').iterdir()}; req={'99-dji-auto-upload.rules.j2','DjiAutoUploadTask.xml.j2','com.dji-auto-upload.watcher.plist.j2','dji-watcher.ps1.j2','dji-run.ps1.j2','dji-view.ps1.j2'}; assert req<=s, req-s"
+          python -c "from pathlib import Path; import dji_auto_upload.installers as i; s={p.name for p in (Path(i.__file__).parent/'templates').iterdir()}; req={'99-dji-auto-upload.rules.j2','DjiAutoUploadTask.xml.j2','com.dji-auto-upload.watcher.plist.j2','dji-watcher.ps1.j2','dji-run.ps1.j2','dji-view.ps1.j2','dji-watcher-launch.vbs.j2'}; assert req<=s, req-s"
         shell: bash

@@ -57,6 +57,7 @@ jobs:
               "dji-watcher.ps1.j2",
               "dji-run.ps1.j2",
               "dji-view.ps1.j2",
+              "dji-watcher-launch.vbs.j2",
           }
           missing = required - shipped
           assert not missing, f"wheel is missing templates: {missing}"

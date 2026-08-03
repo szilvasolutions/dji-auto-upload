@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0] - 2026-08-03
+
+### Fixed
+- **The watcher window: closing it killed the watcher.** The Scheduled Task ran
+  `powershell.exe -WindowStyle Hidden`, which still allocates a console *before*
+  it parses that flag — so an empty PowerShell window appeared after every
+  install and update, and closing it (the obvious thing to do) silently killed
+  the watcher. The task now runs a tiny `.vbs` launcher that spawns the watcher
+  with no window at all and exits.
+- The watcher holds a single-instance mutex, so the task's 5-minute repetition
+  revives a dead watcher without stacking duplicates on a live one.
+
 ## [0.5.2] - 2026-08-03
 
 ### Fixed
@@ -289,6 +301,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.6.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.4.1...v0.5.0

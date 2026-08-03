@@ -1,0 +1,15 @@
+' dji-auto-upload watcher launcher.
+'
+' The Scheduled Task runs THIS, not PowerShell directly. `powershell.exe
+' -WindowStyle Hidden` still allocates a console window before it parses that
+' flag, so a console flashes up and stays — and a user who closes it kills the
+' watcher, which is exactly what happened in the field.
+'
+' WScript.Shell.Run with intWindowStyle 0 creates no window at all. This script
+' spawns the watcher and exits immediately; the watcher itself holds a
+' single-instance mutex, so the task's 5-minute repetition can safely re-run
+' this without stacking up watchers.
+
+Dim shell
+Set shell = CreateObject("Wscript.Shell")
+shell.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ""{{ watcher_path }}""", 0, False

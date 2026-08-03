@@ -1,12 +1,20 @@
-"""Windows auto-trigger: Scheduled Task that runs a PowerShell WMI watcher.
+"""Windows auto-trigger: a Scheduled Task that runs a polling volume watcher.
 
-The watcher subscribes to Win32_VolumeChangeEvent (EventType=2 = arrival),
-filters arrivals by checking for a `DCIM\\` directory or DJI vendor ID, and
-shells out to `dji-auto-upload run --device <drive>`.
+Four files are generated into %LOCALAPPDATA%\\dji-auto-upload:
 
-We use `schtasks /create /xml` so we don't need PowerShell scheduled-jobs
-modules. The task runs *at logon* of the current user, so the watcher is
-running whenever the user is logged in. No admin needed.
+- dji-watcher-launch.vbs — what the task actually runs. It spawns the watcher
+  with no window at all. `powershell.exe -WindowStyle Hidden` allocates a
+  console *before* parsing that flag, so a window appeared and a user who
+  closed it killed the watcher.
+- dji-watcher.ps1 — polls for a DJI volume; holds a single-instance mutex so the
+  task's 5-minute repetition revives a dead watcher without stacking copies.
+- dji-run.ps1 — the WORKER: runs the offload in its own hidden console, so
+  closing the progress window cannot interrupt a transfer. Shows the result
+  popup and logs its start/exit.
+- dji-view.ps1 — the VIEWER: a visible, read-only progress window. Safe to close.
+
+`schtasks /create /xml` avoids needing the PowerShell scheduled-jobs module. The
+task runs at logon of the current user; no admin needed.
 """
 
 from __future__ import annotations
@@ -99,7 +107,13 @@ def install(cfg: Config, *, force: bool = False) -> None:
         ),
         encoding="utf-8-sig",
     )
-    for f in (watcher, worker, viewer):
+    # The task launches this, not PowerShell — see the template for why.
+    launcher = watcher.with_name("dji-watcher-launch.vbs")
+    launcher.write_text(
+        _render("dji-watcher-launch.vbs.j2", watcher_path=str(watcher).replace('"', '""')),
+        encoding="utf-8-sig",
+    )
+    for f in (watcher, worker, viewer, launcher):
         console.print(f"[green]Wrote[/green] {f}")
 
     task_xml_path = watcher.with_name("DjiAutoUploadTask.xml")
@@ -121,6 +135,7 @@ def install(cfg: Config, *, force: bool = False) -> None:
                 "DjiAutoUploadTask.xml.j2",
                 powershell="powershell.exe",
                 watcher_path=str(watcher),
+                launcher_path=str(launcher),
                 user=os.environ.get("USERNAME", ""),
                 repeat=repeat,
             ),
@@ -182,7 +197,12 @@ def uninstall(cfg: Config) -> None:
         console.print(f"[dim]No '{TASK_NAME}' task found ({proc.stderr.strip()}).[/dim]")
 
     watcher = _watcher_path()
-    for f in (watcher, watcher.with_name("dji-run.ps1"), watcher.with_name("dji-view.ps1")):
+    for f in (
+        watcher,
+        watcher.with_name("dji-run.ps1"),
+        watcher.with_name("dji-view.ps1"),
+        watcher.with_name("dji-watcher-launch.vbs"),
+    ):
         if f.exists():
             f.unlink()
             console.print(f"[green]Removed[/green] {f}")

@@ -238,3 +238,50 @@ def test_watcher_does_not_filter_out_drives_windows_calls_fixed() -> None:
     assert "DriveType -eq 'Removable'" not in ps
     assert "SystemDrive" in ps          # system drive excluded instead
     assert "drives visible" in ps       # and it logs what it can see
+
+
+def test_task_runs_the_vbs_launcher_not_powershell_directly() -> None:
+    """Field failure: the task ran `powershell -WindowStyle Hidden`, which still
+    allocates a console. A window appeared, the user closed it, and the watcher
+    died — twice. The task must run the windowless .vbs launcher instead."""
+    import xml.dom.minidom as md
+
+    from dji_auto_upload.installers.windows_task import _render
+
+    xml = _render(
+        "DjiAutoUploadTask.xml.j2",
+        powershell="powershell.exe",
+        watcher_path=r"C:\x\dji-watcher.ps1",
+        launcher_path=r"C:\x\dji-watcher-launch.vbs",
+        user="szisz",
+        repeat=True,
+    )
+    md.parseString(xml)
+    assert "<Command>wscript.exe</Command>" in xml
+    assert "dji-watcher-launch.vbs" in xml
+    assert "-WindowStyle Hidden -ExecutionPolicy" not in xml
+
+
+def test_vbs_launcher_spawns_with_no_window() -> None:
+    from dji_auto_upload.installers.windows_task import _render
+
+    vbs = _render("dji-watcher-launch.vbs.j2", watcher_path=r"C:\x\dji-watcher.ps1")
+    # intWindowStyle 0 = no window; bWaitOnReturn False = launcher exits at once.
+    assert ", 0, False" in vbs
+    assert '""C:\\x\\dji-watcher.ps1""' in vbs  # VBS-escaped quoting
+
+
+def test_watcher_holds_a_single_instance_mutex() -> None:
+    """The task repeats every 5 min and the launcher exits immediately, so
+    without a mutex each repetition would stack another watcher."""
+    from dji_auto_upload.installers.windows_task import _ps_single_quote, _render
+
+    ps = _render(
+        "dji-watcher.ps1.j2",
+        worker=_ps_single_quote(r"C:\x\dji-run.ps1"),
+        viewer=_ps_single_quote(r"C:\x\dji-view.ps1"),
+        vendor_ids=["2ca3"],
+        labels=["DJI"],
+    )
+    assert "System.Threading.Mutex" in ps
+    assert "already running" in ps

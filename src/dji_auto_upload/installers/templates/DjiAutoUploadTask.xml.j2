@@ -43,8 +43,12 @@
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>{{ powershell }}</Command>
-      <Arguments>-WindowStyle Hidden -ExecutionPolicy Bypass -File "{{ watcher_path }}"</Arguments>
+      <!-- wscript, not powershell: `powershell -WindowStyle Hidden` still
+           allocates a console window before it parses the flag, and a user who
+           closes that window kills the watcher. The .vbs spawns it with no
+           window at all and exits. -->
+      <Command>wscript.exe</Command>
+      <Arguments>//B //Nologo "{{ launcher_path }}"</Arguments>
     </Exec>
   </Actions>
 </Task>
