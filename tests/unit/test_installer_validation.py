@@ -304,3 +304,20 @@ def test_vbs_launcher_is_pure_ascii_and_gets_no_bom() -> None:
     launcher_block = src[src.index("dji-watcher-launch.vbs.j2"):]
     launcher_block = launcher_block[: launcher_block.index(")")]
     assert "utf-8-sig" not in launcher_block
+
+
+def test_install_kills_stale_watchers_before_starting_a_new_one() -> None:
+    """A running watcher holds the OLD script in memory, so after an update it
+    keeps behaving like the previous version — which made several updates look
+    like they had changed nothing. Workers are deliberately NOT killed: one may
+    be mid-upload."""
+    import inspect
+
+    from dji_auto_upload.installers import windows_task as w
+
+    src = inspect.getsource(w.install)
+    assert "_kill_stale_watchers()" in src
+
+    killer = inspect.getsource(w._kill_stale_watchers)
+    assert "dji-watcher.ps1" in killer
+    assert "dji-run.ps1" not in killer  # never kill a worker mid-transfer

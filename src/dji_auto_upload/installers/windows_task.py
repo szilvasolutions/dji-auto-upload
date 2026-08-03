@@ -123,6 +123,12 @@ def install(cfg: Config, *, force: bool = False) -> None:
 
     task_xml_path = watcher.with_name("DjiAutoUploadTask.xml")
 
+    # A watcher already running holds the previous version of the script in
+    # memory, so it would keep behaving like the old build after an update.
+    stale = _kill_stale_watchers()
+    if stale:
+        console.print(f"[dim]Stopped {stale} watcher process(es) from the previous version.[/dim]")
+
     if force:
         subprocess.run(
             ["schtasks", "/delete", "/tn", TASK_NAME, "/f"],
@@ -203,6 +209,31 @@ def install(cfg: Config, *, force: bool = False) -> None:
             "Sign out and back in, or run "
             "[cyan]schtasks /run /tn \"DJI Auto Upload Watcher\"[/cyan]."
         )
+
+
+def _kill_stale_watchers() -> int:
+    """Stop any watcher already running, and report how many were stopped.
+
+    An update rewrites dji-watcher.ps1, but a watcher process that is already
+    running holds the OLD script in memory and keeps behaving like the old
+    version — which made several updates look like they had changed nothing.
+    Only watchers are killed; a WORKER may be mid-upload and is left alone.
+    """
+    ps = (
+        "$p = Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | "
+        "Where-Object { $_.CommandLine -like '*dji-watcher.ps1*' }; "
+        "$p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue }; "
+        "@($p).Count"
+    )
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps],
+            capture_output=True, text=True, timeout=30,
+        )
+        out = proc.stdout.strip()
+        return int(out) if out.isdigit() else 0
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return 0
 
 
 def _watcher_is_running() -> bool:

@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.2] - 2026-08-03
+
+### Fixed
+- `install-trigger` (and therefore `update`) now stops any watcher already
+  running before starting the new one. A running watcher holds the previous
+  version of the script in memory, so after an update it kept behaving like the
+  old build — which repeatedly made a genuine fix look like it had changed
+  nothing. Workers are deliberately left alone: one may be mid-upload.
+
 ## [0.6.1] - 2026-08-03
 
 ### Fixed
@@ -315,6 +324,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.6.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.5.1...v0.5.2
