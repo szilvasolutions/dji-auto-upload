@@ -23,7 +23,7 @@ def test_root_posts_notification_as_the_desktop_user(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(desktop.sys, "platform", "linux")
     monkeypatch.setattr(desktop.shutil, "which", lambda n: f"/usr/bin/{n}")
-    monkeypatch.setattr(desktop.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(desktop.os, "geteuid", lambda: 0, raising=False)
     monkeypatch.setattr(desktop, "_desktop_session", lambda: ("adam", 1000))
 
     class R:
@@ -50,7 +50,7 @@ def test_root_posts_notification_as_the_desktop_user(monkeypatch: pytest.MonkeyP
 def test_root_without_a_desktop_session_stays_silent(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(desktop.sys, "platform", "linux")
     monkeypatch.setattr(desktop.shutil, "which", lambda n: f"/usr/bin/{n}")
-    monkeypatch.setattr(desktop.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(desktop.os, "geteuid", lambda: 0, raising=False)
     monkeypatch.setattr(desktop, "_desktop_session", lambda: None)
     assert desktop.notify("DJI", "50%") is False
 
@@ -64,7 +64,7 @@ def test_notifications_replace_in_place_rather_than_stacking(
 
     monkeypatch.setattr(desktop.sys, "platform", "linux")
     monkeypatch.setattr(desktop.shutil, "which", lambda n: f"/usr/bin/{n}")
-    monkeypatch.setattr(desktop.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(desktop.os, "geteuid", lambda: 1000, raising=False)
 
     class R:
         returncode = 0

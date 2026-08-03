@@ -80,8 +80,8 @@
 | `config.py` | TOML schema, defaults, atomic writes. |
 | `paths.py` | Per-OS config/data/log/runtime dirs via `platformdirs`. |
 | `installers/linux_udev.py` | Renders + installs the udev rule, reloads udevadm. |
-| `installers/macos_launchd.py` | Installs the LaunchAgent and runs the resident DiskArbitration watcher. |
-| `installers/windows_task.py` | Installs the Scheduled Task + PowerShell WMI watcher. |
+| `installers/macos_launchd.py` | Installs the LaunchAgent and runs the resident `/Volumes` polling watcher. |
+| `installers/windows_task.py` | Installs the Scheduled Task, the windowless VBS launcher, and the PowerShell polling watcher + worker/viewer scripts. |
 
 ## Layout on disk
 
@@ -122,9 +122,10 @@
   `chmod 0600` natural and `git ignore` unambiguous.
 - **udev → systemd-run, not direct exec.** Escapes systemd-udevd's seccomp
   filter (which blocks `mount(2)`) and gives journald logs for free.
-- **macOS DiskArbitration, not WatchPaths.** WatchPaths fires on directory
-  mtime changes, which is unreliable for mount events on modern macOS.
-  DiskArbitration is the supported API and the watcher is idle-cheap.
-- **Windows WMI in PowerShell, not pywin32.** PowerShell `Win32_VolumeChangeEvent`
-  is built-in, robust, and runs unattended. Adding pywin32 just to get the
-  same eventing buys us nothing.
+- **Polling, not event callbacks (macOS & Windows).** Earlier versions used
+  DiskArbitration (pyobjc) on macOS and `Register-WmiEvent` on Windows. The
+  Windows event route failed three separate ways in the field — action scope,
+  `$using:` validity, silent host death — every failure invisible. A 3-second
+  poll costs nothing measurable, runs in one ordinary scope, and its failures
+  are loggable. Boring beats clever for a tool whose promise is unattended.
+

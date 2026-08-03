@@ -148,8 +148,8 @@ should never know.
 | CLI framework | Typer | Click, argparse | type-hint-driven, gives you `--help` + autocomplete free |
 | File copy | shutil + atomic rename | rsync subprocess | one less external dep, identical on three OSes |
 | Linux trigger | udev + systemd-run | direct udev RUN+= | escapes seccomp filter (lesson 2) |
-| macOS trigger | LaunchAgent + DiskArbitration | WatchPaths, polling | DiskArbitration is the supported API |
-| Windows trigger | Scheduled Task + PowerShell WMI | pywin32 long-runner | PowerShell WMI is built-in and robust |
+| macOS trigger | LaunchAgent + `/Volumes` poll | DiskArbitration (pyobjc) | events needed a heavy native dep and could not be CI-tested |
+| Windows trigger | Scheduled Task + PowerShell poll | WMI events, pywin32 | WMI event actions failed three ways in the field, all silently |
 | Lock | filelock | manual flock/msvcrt | one library, three platforms |
 | Notifier | Telegram via requests | python-telegram-bot SDK | one POST, no need for the full client |
 | Logging | RotatingFileHandler | logrotate | zero external setup |

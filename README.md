@@ -42,9 +42,9 @@ doesn't mount as a drive, so nothing that watches for drives can see it.
 
 ## What you get
 
-- **Plug and forget, on all three OSes.** Linux watches with udev, macOS with a
-  DiskArbitration agent, Windows with a Scheduled Task running a WMI watcher.
-  Install it once and you never launch it again.
+- **Plug and forget, on all three OSes.** Linux triggers straight from udev;
+  macOS and Windows run a tiny background watcher that checks for a new drive
+  every few seconds. Install it once and you never launch it again.
 - **Your cloud, your choice.** Uploads go through rclone, so Google Drive,
   Photos, Dropbox, OneDrive, S3, a NAS, whatever you already use. Setup just
   asks which one.
@@ -204,11 +204,11 @@ dji-auto-upload setup
 dji-auto-upload install-trigger    # writes ~/Library/LaunchAgents/com.dji-auto-upload.watcher.plist
 ```
 
-The trigger registers a per-user LaunchAgent that runs a tiny resident
-process subscribed to DiskArbitration disk-appeared events. Watch logs with:
+The trigger registers a per-user LaunchAgent that runs a small watcher
+polling `/Volumes` every 3 seconds. Watch its logs with:
 
 ```bash
-log stream --predicate 'subsystem == "com.dji-auto-upload"'
+tail -f ~/Library/Logs/dji-auto-upload/watcher.err.log
 ```
 
 </details>
@@ -225,9 +225,10 @@ dji-auto-upload setup
 dji-auto-upload install-trigger
 ```
 
-The trigger registers a Scheduled Task triggered at logon that runs a
-PowerShell `Win32_VolumeChangeEvent` watcher. No admin needed for a per-user
-task. Run manually for testing:
+The trigger registers a Scheduled Task (per-user, no admin needed) that runs a
+completely windowless PowerShell watcher polling for new drives every 3
+seconds. When a DJI volume appears it starts the offload in a detached hidden
+process plus a separate, closable progress window. Start it by hand with:
 
 ```powershell
 schtasks /run /tn "DJI Auto Upload Watcher"
@@ -314,8 +315,8 @@ USB plug-in
 ┌────────────────────────────────────────────────┐
 │  Per-OS trigger                                │
 │  Linux: udev rule → systemd-run                │
-│  macOS: LaunchAgent + DiskArbitration callback │
-│  Windows: Scheduled Task + WMI watcher         │
+│  macOS: LaunchAgent → /Volumes poll (3 s)      │
+│  Windows: Scheduled Task → drive poll (3 s)    │
 └──────────────┬─────────────────────────────────┘
                │
                ▼

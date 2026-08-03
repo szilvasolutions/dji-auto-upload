@@ -55,15 +55,11 @@ sudo systemctl reset-failed dji-auto-upload-sdc1.service   # or whatever %k
 launchctl print gui/$UID/com.dji-auto-upload.watcher
 ```
 
-Look for `state = running`. If the state is `not running` or it's been
-exiting and KeepAlive-restarting, the `pyobjc-framework-DiskArbitration`
-extra may not be installed:
-
-```bash
-pip install "dji-auto-upload[macos]"
-# or
-pip install pyobjc-framework-DiskArbitration
-```
+Look for `state = running`. If it keeps exiting and KeepAlive-restarting, the
+error is in the watcher log below — the most common causes are macOS's
+privacy prompt for removable volumes being denied (System Settings → Privacy &
+Security → Files and Folders) and the Python that installed the package having
+been removed since.
 
 Watcher logs:
 
@@ -71,17 +67,29 @@ Watcher logs:
 tail -f ~/Library/Logs/dji-auto-upload/watcher.err.log
 ```
 
-## Windows: Scheduled Task installed but not firing
+## Windows: nothing happens when I plug the drone in
 
-Verify it's enabled and currently running:
+First stop, always — the watcher log says which stage went quiet:
 
 ```powershell
-Get-ScheduledTask -TaskName "DJI Auto Upload Watcher"
-schtasks /query /tn "DJI Auto Upload Watcher" /v
+Get-Content "$env:LOCALAPPDATA\dji-auto-upload\watcher.log" -Tail 30
 ```
 
-If it shows ready but not running, sign out and back in (the trigger is
-"At log on"), or run manually:
+A healthy watcher logs `watcher started`, a `watching - drives visible:` line
+whenever the drive list changes, then `DJI volume detected` and `[worker]`
+lines when you plug in. No file at all means the task never ran.
+
+Note the task itself showing `Ready` is **normal**: its action is a tiny
+launcher that spawns the watcher with no window and exits immediately, so the
+task is not "running" even while the watcher is. Check for the actual process:
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
+  Where-Object { $_.CommandLine -like '*dji-watcher.ps1*' } |
+  Select-Object ProcessId
+```
+
+No process? Start it (or sign out and back in — the trigger is "at log on"):
 
 ```powershell
 schtasks /run /tn "DJI Auto Upload Watcher"
