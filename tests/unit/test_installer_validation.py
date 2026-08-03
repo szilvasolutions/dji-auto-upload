@@ -168,7 +168,7 @@ def test_watcher_polls_and_launches_hidden_worker_plus_visible_viewer() -> None:
     )
     code = "\n".join(ln for ln in ps.splitlines() if not ln.strip().startswith("#"))
     assert "Register-WmiEvent" not in code
-    assert "Get-ReadyRemovableDrives" in code
+    assert "Get-CandidateDrives" in code
     # Worker launched hidden; viewer launched visible.
     assert "-WindowStyle Hidden" in code and "dji-run.ps1" in ps
     assert "-WindowStyle Normal" in code and "dji-view.ps1" in ps
@@ -220,3 +220,21 @@ def test_worker_logs_start_and_exit_so_a_hidden_failure_leaves_a_trail() -> None
     assert "worker finished for" in ps
     assert "FAILED to launch" in ps
     assert "watcher.log" in ps
+
+
+def test_watcher_does_not_filter_out_drives_windows_calls_fixed() -> None:
+    """Field failure: the goggles mounted as D:\\ but the watcher logged nothing
+    at all, because it only enumerated DriveType 'Removable' and Windows reports
+    many USB devices as 'Fixed'. Enumerate every ready non-system drive instead."""
+    from dji_auto_upload.installers.windows_task import _ps_single_quote, _render
+
+    ps = _render(
+        "dji-watcher.ps1.j2",
+        worker=_ps_single_quote(r"C:\x\dji-run.ps1"),
+        viewer=_ps_single_quote(r"C:\x\dji-view.ps1"),
+        vendor_ids=["2ca3"],
+        labels=["DJI"],
+    )
+    assert "DriveType -eq 'Removable'" not in ps
+    assert "SystemDrive" in ps          # system drive excluded instead
+    assert "drives visible" in ps       # and it logs what it can see

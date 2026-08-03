@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.2] - 2026-08-03
+
+### Fixed
+- **The Windows watcher could not see the drone at all.** It enumerated only
+  drives Windows classifies as `Removable`, but many USB devices — DJI goggles
+  among them — are reported as `Fixed`, so the volume never entered the poll
+  loop and not a single log line was written. It now considers every ready
+  non-system drive and lets the DCIM check decide.
+- The watcher logs the drives it can see whenever that list changes, and at
+  least every 5 minutes. "Nothing happened" can no longer be confused with "the
+  loop died" or "it never saw your drive".
+
 ## [0.5.1] - 2026-08-03
 
 ### Fixed
@@ -277,6 +289,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.5.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.4.0...v0.4.1

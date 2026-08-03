@@ -34,10 +34,17 @@ function Write-DjiLog($message) {
     } catch { }
 }
 
-function Get-ReadyRemovableDrives {
+function Get-CandidateDrives {
+    # Deliberately NOT filtered to DriveType 'Removable'. Windows classifies many
+    # USB devices — DJI goggles among them — as 'Fixed', and filtering on
+    # Removable made the drone invisible to the watcher with no log line at all.
+    # Enumerate every ready drive except the system drive and let Test-DjiVolume
+    # decide; a wrong guess here costs a directory probe, a missed drive costs
+    # the whole feature.
     try {
+        $sysDrive = ($env:SystemDrive + '\')   # e.g. "C:\"
         [System.IO.DriveInfo]::GetDrives() |
-            Where-Object { $_.IsReady -and $_.DriveType -eq 'Removable' } |
+            Where-Object { $_.IsReady -and $_.Name -ne $sysDrive -and $_.DriveType -ne 'Network' } |
             ForEach-Object { $_.Name }   # e.g. "D:\"
     } catch {
         Write-DjiLog "ERROR enumerating drives: $_"
@@ -106,10 +113,22 @@ Write-DjiLog "watcher started (worker: $Worker, poll: ${PollSeconds}s)"
 # is harmless: the ledger dedupes and a lock prevents overlapping runs.
 $seen = @{}
 $ticks = 0
+$lastReport = ''
 
 while ($true) {
     try {
-        $current = @(Get-ReadyRemovableDrives)
+        $current = @(Get-CandidateDrives)
+
+        # Log the drive list whenever it changes, and at least every 5 minutes.
+        # "Nothing happened" must never again be indistinguishable from "the loop
+        # is dead" or "the loop never saw your drive".
+        $report = ($current -join ', ')
+        $ticks++
+        if ($report -ne $lastReport -or ($ticks * $PollSeconds) % 300 -eq 0) {
+            $shown = if ($report) { $report } else { '(none)' }
+            Write-DjiLog "watching - drives visible: $shown"
+            $lastReport = $report
+        }
 
         foreach ($drive in $current) {
             if (-not $seen.ContainsKey($drive)) {
@@ -117,7 +136,7 @@ while ($true) {
                 if (Test-DjiVolume $drive) {
                     Start-Offload $drive
                 } else {
-                    Write-DjiLog "volume $drive arrived but has no DCIM folder - ignoring"
+                    Write-DjiLog "volume $drive has no DCIM folder - ignoring"
                 }
             }
         }
@@ -128,12 +147,6 @@ while ($true) {
                 $seen.Remove($old)
                 Write-DjiLog "volume $old removed"
             }
-        }
-
-        # Heartbeat roughly every 30 minutes, so the log proves it is alive.
-        $ticks++
-        if (($ticks * $PollSeconds) % 1800 -eq 0) {
-            Write-DjiLog "still watching (drives: $($current -join ', '))"
         }
     } catch {
         # Never let one bad iteration kill the watcher.
