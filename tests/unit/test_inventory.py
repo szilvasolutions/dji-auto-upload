@@ -112,3 +112,19 @@ def test_no_dcim_at_all_returns_nothing(tmp_path: Path) -> None:
     from dji_auto_upload.inventory import find_dcim_dirs
 
     assert find_dcim_dirs(tmp_path, ("100MEDIA",)) == []
+
+
+def test_macos_appledouble_sidecars_are_not_treated_as_footage(tmp_path: Path) -> None:
+    """A Mac that has touched an exFAT card leaves `._DJI_0001.MP4` beside every
+    clip — same extension, a few hundred bytes of metadata. Uploading those puts
+    junk in the user's cloud."""
+    from dji_auto_upload.inventory import walk_dcim
+
+    d = tmp_path / "100MEDIA"
+    d.mkdir()
+    (d / "DJI_0001.MP4").write_bytes(b"x" * 1000)
+    (d / "._DJI_0001.MP4").write_bytes(b"applehdr")
+    (d / ".DS_Store").write_bytes(b"junk")
+
+    found = walk_dcim(d, ("mp4", "mov", "jpg"))
+    assert [f.name for f in found] == ["DJI_0001.MP4"]

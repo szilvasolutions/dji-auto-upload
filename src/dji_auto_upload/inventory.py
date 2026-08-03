@@ -121,6 +121,13 @@ def walk_dcim(dcim: Path, extensions: tuple[str, ...]) -> list[FileInfo]:
     for f in sorted(dcim.iterdir()):
         if not f.is_file():
             continue
+        # Skip macOS AppleDouble sidecars and other dot-files. A Mac that has
+        # touched an exFAT card leaves `._DJI_0001.MP4` next to every clip —
+        # same extension, a few hundred bytes of metadata — which would
+        # otherwise be staged and uploaded to the user's cloud as if it were
+        # footage.
+        if f.name.startswith("."):
+            continue
         if f.suffix.lower() not in exts:
             continue
         try:

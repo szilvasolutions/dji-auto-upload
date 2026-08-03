@@ -3,6 +3,23 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.2] - 2026-08-03
+
+### Fixed
+- macOS AppleDouble sidecars (`._DJI_0001.MP4`) were treated as footage. Any card
+  a Mac has touched carries one beside every clip — same extension, a few hundred
+  bytes of metadata — so they would have been staged and uploaded to the user's
+  cloud as if they were video. Dot-files are now skipped.
+- The upload timeout is now measured from the last sign of life rather than from
+  the start of the transfer. A large card on a slow connection could exceed the
+  wall-clock limit and be killed mid-upload and reported as a failure; now the
+  clock only runs when rclone has gone genuinely silent.
+
+### Changed
+- The README no longer claims macOS is tested. Every macOS path is implemented
+  and unit-tested, but nobody has yet plugged a real DJI device into a real Mac,
+  and the badge said otherwise.
+
 ## [0.7.1] - 2026-08-03
 
 ### Fixed
@@ -356,6 +373,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.7.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.6.1...v0.6.2

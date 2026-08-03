@@ -236,6 +236,10 @@ def upload_files(
         os.unlink(files_from_path)
         raise UploadError("rclone binary not found on PATH") from exc
 
+    # Inactivity timeout, not wall-clock: rclone reports every couple of seconds
+    # while it is working, so this fires only when it genuinely wedges. A
+    # wall-clock limit would kill a large card on a slow uplink mid-transfer and
+    # report it as a failure, which is the opposite of what the user wants.
     deadline = time.monotonic() + behaviour.upload_timeout_sec
     timed_out = False
     try:
@@ -245,6 +249,7 @@ def upload_files(
             if line:
                 stderr_lines.append(line)
                 log.info("rclone: %s", line)
+                deadline = time.monotonic() + behaviour.upload_timeout_sec
                 stats = parse_stats(line)
                 if stats is not None and on_progress is not None:
                     on_progress(stats)
@@ -261,7 +266,7 @@ def upload_files(
 
     if timed_out:
         raise UploadError(
-            f"rclone timed out after {behaviour.upload_timeout_sec}s on {target}"
+            f"rclone stopped responding for {behaviour.upload_timeout_sec}s on {target}"
         )
 
     stderr_text = "\n".join(stderr_lines)

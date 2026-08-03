@@ -54,7 +54,7 @@ strict_detect = false
 [behaviour]
 disk_headroom_mb   = 512
 copy_timeout_sec   = 1800                    # per file
-upload_timeout_sec = 3600                    # per album / date
+upload_timeout_sec = 3600                    # give up if rclone goes silent this long
 upload_transfers   = 4
 upload_retries     = 3
 verify_after_copy  = true                    # size check; mtime is preserved either way

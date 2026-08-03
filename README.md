@@ -5,7 +5,8 @@
 [![CI](https://github.com/szilvasolutions/dji-auto-upload/actions/workflows/ci.yml/badge.svg)](https://github.com/szilvasolutions/dji-auto-upload/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Tested on Linux/macOS/Windows](https://img.shields.io/badge/tested-linux%20%7C%20macos%20%7C%20windows-success.svg)](#per-os-installation)
+[![Verified on Linux and Windows](https://img.shields.io/badge/verified%20on-linux%20%7C%20windows-success.svg)](#per-os-installation)
+[![macOS untested](https://img.shields.io/badge/macOS-untested%20on%20hardware-orange.svg)](#per-os-installation)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/szilvasolus)
 
 My DJI Neo 2 doesn't have an SD card. Everything it records lives on internal
@@ -184,7 +185,13 @@ defaults. It also means rclone uses *your* `rclone.conf`.
 </details>
 
 <details>
-<summary><b>macOS</b></summary>
+<summary><b>macOS</b> — works in principle, not yet confirmed on real hardware</summary>
+
+> **Honest status:** every code path here is implemented and unit-tested, but no
+> one has yet plugged a real DJI device into a real Mac with this installed. If
+> you try it, `dji-auto-upload diagnose` output in an issue would be genuinely
+> useful — and expect the possibility of a rough edge.
+
 
 Requires `rclone`. Install via Homebrew if needed:
 
