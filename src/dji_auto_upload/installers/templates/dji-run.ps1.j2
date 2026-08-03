@@ -38,10 +38,19 @@ if ($code -eq 0) {
     # Already running in another window — did nothing. NOT a success, NOT an error.
     $shell.Popup("This drone is already being offloaded in another window.", 6, 'DJI Auto Upload', 48) | Out-Null
 } else {
+    # Lead with WHY it failed. "exit code 1" tells the user nothing; the run
+    # state carries rclone's own explanation (expired token, quota, no network).
+    $why = ''
+    try {
+        $state = Get-Content -Raw -Path '{{ state_file }}' -ErrorAction Stop | ConvertFrom-Json
+        if ($state.error) { $why = [string]$state.error }
+    } catch { }
+
+    $msg = "DJI offload FAILED.`n`n"
+    if ($why) { $msg += "$why`n`n" } else { $msg += "Exit code $code.`n`n" }
+    $msg += "Your footage is still safe on the device and in:`n{{ stage_hint }}`n`n" +
+            "Log file:`n{{ log_file }}`n`n" +
+            "For a support bundle, run:  dji-auto-upload diagnose"
     # 16 = error icon; 0 = stays until dismissed.
-    $msg = "DJI offload FAILED (exit code $code).`n`n" +
-           "Log file:`n{{ log_file }}`n`n" +
-           "For a support bundle to attach to a bug report, run:`n" +
-           "dji-auto-upload diagnose"
     $shell.Popup($msg, 0, 'DJI Auto Upload', 16) | Out-Null
 }

@@ -89,6 +89,8 @@ def install(cfg: Config, *, force: bool = False) -> None:
             binary=_ps_single_quote(binary),
             pre_args=q_pre,
             log_file=str(cfg.paths.log_file),
+            state_file=str(cfg.paths.log_dir / "last-run.json"),
+            stage_hint=str(cfg.paths.stage_dir),
         ),
         encoding="utf-8-sig",
     )

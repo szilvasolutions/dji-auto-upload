@@ -3,6 +3,25 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.0] - 2026-08-03
+
+### Added
+- **Failures now say what actually went wrong.** rclone's own explanation is
+  extracted and put in the popup, the desktop notification, `status` and the
+  run state — with advice for the common causes (an expired cloud connection
+  points at `rclone config reconnect`, plus quota, no-network and
+  missing-destination). Previously a real failure showed only "exit code 1" and
+  the one line that mattered was buried in a log file.
+- The failure popup also states that the footage is still safe, and where the
+  staged copy is.
+
+### Fixed
+- `install-trigger` (and therefore `update`) stops any watcher already running
+  before starting the new one. A running watcher holds the previous version of
+  the script in memory, so after an update it kept behaving like the old build —
+  which repeatedly made a genuine fix look like it had changed nothing. Workers
+  are left alone: one may be mid-upload.
+
 ## [0.6.2] - 2026-08-03
 
 ### Fixed
@@ -324,6 +343,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.7.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.5.2...v0.6.0

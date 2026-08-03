@@ -27,6 +27,46 @@ class UploadResult:
     succeeded: list[str]   # basenames that uploaded cleanly
     failed: list[str]      # basenames in this batch (all-or-nothing per call)
     rc: int
+    # rclone's own explanation of the failure. Without this the user only ever
+    # saw "exit code 1" and had to dig through a log to find e.g. an expired
+    # token — the one line that actually tells them what to do.
+    reason: str = ""
+
+
+def _explain(stderr: str) -> str:
+    """Pull rclone's actual complaint out of its stderr, for the user to read.
+
+    Prefers the well-known causes we can give advice for, then falls back to the
+    first CRITICAL/ERROR line. A NOTICE about the shared client_id is chatter,
+    not a failure, so it is never chosen.
+    """
+    lines = [ln.strip() for ln in stderr.splitlines() if ln.strip()]
+    interesting = [
+        ln for ln in lines
+        if ("CRITICAL" in ln or "ERROR" in ln) and "NOTICE" not in ln
+    ]
+    blob = " ".join(interesting)
+
+    if "invalid_grant" in blob or "token expired" in blob or "couldn't fetch token" in blob:
+        return (
+            "the cloud connection has expired — reauthorise rclone with: "
+            "rclone config reconnect <remote>:"
+        )
+    if "quota" in blob.lower() or "429" in blob:
+        return "the cloud rejected the upload for exceeding a quota — try again later"
+    if "no such host" in blob.lower() or "dial tcp" in blob.lower():
+        return "could not reach the cloud — check the network connection"
+    if "directory not found" in blob.lower() or "couldn't find root directory" in blob:
+        return "rclone could not open the destination folder on the remote"
+    if interesting:
+        # Strip rclone's timestamp/level prefix for readability.
+        first = interesting[0]
+        for marker in ("CRITICAL:", "ERROR :", "ERROR:"):
+            if marker in first:
+                first = first.split(marker, 1)[1].strip()
+                break
+        return first[:300]
+    return ""
 
 
 def rclone_binary() -> str:
@@ -152,8 +192,11 @@ def upload_files(
     if proc.returncode == 0:
         return UploadResult(succeeded=list(basenames), failed=[], rc=0)
 
+    reason = _explain(proc.stderr or "")
     if len(basenames) == 1:
-        return UploadResult(succeeded=[], failed=list(basenames), rc=proc.returncode)
+        return UploadResult(
+            succeeded=[], failed=list(basenames), rc=proc.returncode, reason=reason
+        )
 
     # Batch failed. rclone gives us no reliable per-file verdict, so retry each
     # file on its own: successes get ledgered, so a flaky batch can never cause
@@ -165,6 +208,7 @@ def upload_files(
     )
     succeeded: list[str] = []
     failed: list[str] = []
+    last_reason = reason
     for name in basenames:
         single = upload_files(
             stage_dir, [name], remote_path, remote=remote, behaviour=behaviour
@@ -173,4 +217,10 @@ def upload_files(
             succeeded.append(name)
         else:
             failed.append(name)
-    return UploadResult(succeeded=succeeded, failed=failed, rc=0 if not failed else 1)
+            last_reason = single.reason or last_reason
+    return UploadResult(
+        succeeded=succeeded,
+        failed=failed,
+        rc=0 if not failed else 1,
+        reason="" if not failed else last_reason,
+    )

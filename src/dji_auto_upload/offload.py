@@ -298,6 +298,7 @@ class OffloadRun:
 
         all_dates = [d.name for d in existing_stage_dirs(self.stage_base)]
         ok: list[str] = []
+        fail_reason = ""
         skipped: list[str] = []
         failed: list[tuple[str, int, int, int]] = []
 
@@ -350,6 +351,8 @@ class OffloadRun:
                 ok.append(f"{album} ({len(result.succeeded)})")
             else:
                 failed.append((album, result.rc, len(result.succeeded), len(result.failed)))
+                if result.reason:
+                    fail_reason = result.reason
             done_albums = list(self._rs.albums) if self._rs else []
             if album not in done_albums:
                 done_albums.append(album)
@@ -364,8 +367,12 @@ class OffloadRun:
                 f"{a} (exit {rc}, {n_ok} uploaded, {n_bad} failed)"
                 for a, rc, n_ok, n_bad in failed
             )
+            # Lead with rclone's own explanation: "exit code 1" tells the user
+            # nothing, "the cloud connection has expired — reauthorise with …"
+            # tells them exactly what to do.
+            headline = fail_reason or "upload failed"
             raise OffloadError(
-                f"upload partially failed — OK: {ok_str}; skipped: {sk_str}; failed: {fail_str}",
+                f"{headline} (OK: {ok_str}; skipped: {sk_str}; failed: {fail_str})",
                 stage="upload",
             )
 
