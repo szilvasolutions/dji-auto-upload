@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.1] - 2026-08-03
+
+### Changed
+- Documentation catch-up ahead of the public announcement: the README and docs
+  now describe the polling watchers that actually ship, rather than the
+  DiskArbitration/WMI event machinery they replaced. The Windows
+  troubleshooting page leads with the watcher log and explains that the
+  Scheduled Task showing `Ready` is the healthy state (its action is a
+  windowless launcher that exits immediately by design).
+
+### Fixed
+- The desktop-notification unit tests patched `os.geteuid`, which does not
+  exist on Windows, turning the Windows CI matrix red. Tests only; the code
+  itself already guarded with `hasattr`.
+
 ## [0.8.0] - 2026-08-03
 
 ### Added
@@ -397,6 +412,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.8.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.7.0...v0.7.1
