@@ -9,8 +9,26 @@
 
 param([string]$Drive)
 
-& '{{ binary }}' {% for a in pre_args or [] %}'{{ a }}' {% endfor %}run --device $Drive
-$code = $LASTEXITCODE
+# The worker is hidden, so without its own log a failure before Python even
+# starts (execution policy, wrong path, missing interpreter) leaves no trace
+# anywhere. Log start and exit to the same file the watcher writes.
+$LogFile = Join-Path $env:LOCALAPPDATA 'dji-auto-upload\watcher.log'
+function Write-WorkerLog($m) {
+    try {
+        $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+        Add-Content -Path $LogFile -Value "$stamp  [worker] $m" -Encoding UTF8
+    } catch { }
+}
+
+Write-WorkerLog "worker started for $Drive (pid $PID)"
+try {
+    & '{{ binary }}' {% for a in pre_args or [] %}'{{ a }}' {% endfor %}run --device $Drive
+    $code = $LASTEXITCODE
+} catch {
+    Write-WorkerLog "worker FAILED to launch the offload: $_"
+    $code = 1
+}
+Write-WorkerLog "worker finished for $Drive with exit code $code"
 
 $shell = New-Object -ComObject WScript.Shell
 if ($code -eq 0) {

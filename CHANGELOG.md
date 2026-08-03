@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.1] - 2026-08-03
+
+### Fixed
+- The Windows worker runs hidden, so a failure *before* Python started (script
+  blocked by execution policy, bad interpreter path) produced no window, no
+  popup and no log line anywhere. It now writes its start, its exit code, and
+  any launch failure to `watcher.log`, so "nothing happened" always leaves a
+  trail to read.
+- The generated PowerShell scripts are written with a UTF-8 BOM. Windows
+  PowerShell 5.1 reads a BOM-less UTF-8 file as ANSI, which mangles non-ASCII
+  characters in them.
+
 ## [0.5.0] - 2026-08-03
 
 ### Added
@@ -265,6 +277,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.5.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.3.2...v0.4.0

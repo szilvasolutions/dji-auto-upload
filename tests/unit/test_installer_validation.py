@@ -203,3 +203,20 @@ def test_worker_maps_exit_codes_to_distinct_popups() -> None:
     assert "$code -eq 0" in ps
     assert "$code -eq 75" in ps
     assert "FAILED" in ps
+
+
+def test_worker_logs_start_and_exit_so_a_hidden_failure_leaves_a_trail() -> None:
+    """The worker runs hidden. Without its own log, a failure before Python even
+    starts (execution policy, bad path) is invisible everywhere."""
+    from dji_auto_upload.installers.windows_task import _ps_single_quote, _render
+
+    ps = _render(
+        "dji-run.ps1.j2",
+        binary=_ps_single_quote(r"C:\Py\dji.exe"),
+        pre_args=[],
+        log_file=r"C:\logs\dji.log",
+    )
+    assert "worker started for" in ps
+    assert "worker finished for" in ps
+    assert "FAILED to launch" in ps
+    assert "watcher.log" in ps

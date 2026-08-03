@@ -82,12 +82,12 @@ def install(cfg: Config, *, force: bool = False) -> None:
             pre_args=q_pre,
             log_file=str(cfg.paths.log_file),
         ),
-        encoding="utf-8",
+        encoding="utf-8-sig",
     )
     viewer = watcher.with_name("dji-view.ps1")
     viewer.write_text(
         _render("dji-view.ps1.j2", binary=_ps_single_quote(binary), pre_args=q_pre),
-        encoding="utf-8",
+        encoding="utf-8-sig",
     )
     watcher.write_text(
         _render(
@@ -97,7 +97,7 @@ def install(cfg: Config, *, force: bool = False) -> None:
             vendor_ids=list(cfg.detect.vendor_ids),
             labels=list(cfg.detect.volume_labels),
         ),
-        encoding="utf-8",
+        encoding="utf-8-sig",
     )
     for f in (watcher, worker, viewer):
         console.print(f"[green]Wrote[/green] {f}")
