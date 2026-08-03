@@ -66,8 +66,15 @@ doesn't mount as a drive, so nothing that watches for drives can see it.
   what it would copy, upload, and delete, and changes nothing.
 - **It tells you when it's safe to unplug.** When the run finishes it ejects the
   drone and says so, instead of leaving you guessing mid-copy.
-- **It tells you when something breaks.** Optional Telegram messages for each
-  stage, with the tail end of the log if a run fails.
+- **You can watch it, and closing the window is safe.** On Windows a progress
+  window opens when a drone is plugged in; the offload runs in a separate hidden
+  process, so closing that window never interrupts the upload. A popup reports
+  success or failure either way.
+- **It tells you when it finished, on every OS.** A desktop notification on
+  macOS and Linux, a popup on Windows, and `dji-auto-upload status` always shows
+  the last run's outcome. Telegram messages remain available and optional.
+- **It tells you when something breaks.** The failure popup/notification carries
+  the log path and the `diagnose` command; the run's outcome is recorded durably.
 
 ## Quick start
 
@@ -276,6 +283,7 @@ dji-auto-upload run --dry-run      # show the full plan, change nothing
 dji-auto-upload install-trigger    # install per-OS auto-trigger
 dji-auto-upload uninstall-trigger
 dji-auto-upload status             # config summary, rclone reachable, telegram reachable
+dji-auto-upload watch-run          # live progress of the current run (safe to close)
 dji-auto-upload update             # pull the latest version and refresh the trigger
 dji-auto-upload uninstall          # remove the trigger, and optionally config + staged files
 dji-auto-upload diagnose           # write a support bundle to attach to a bug report

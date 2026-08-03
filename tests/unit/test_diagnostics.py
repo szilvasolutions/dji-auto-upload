@@ -73,3 +73,11 @@ def test_write_report_defaults_next_to_the_log(tmp_app_paths: AppPaths) -> None:
     path = write_report(_cfg(tmp_app_paths))
     assert path.parent == tmp_app_paths.log_dir
     assert path.name.startswith("dji-auto-upload-diagnostics-")
+
+
+def test_bundle_includes_macos_watcher_logs_when_present(tmp_app_paths: AppPaths) -> None:
+    (tmp_app_paths.log_dir).mkdir(parents=True, exist_ok=True)
+    (tmp_app_paths.log_dir / "watcher.err.log").write_text("boom on macos\n", encoding="utf-8")
+    report = build_report(_cfg(tmp_app_paths))
+    assert "macos watcher stderr" in report
+    assert "boom on macos" in report

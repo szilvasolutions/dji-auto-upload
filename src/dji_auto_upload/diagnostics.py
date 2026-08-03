@@ -138,6 +138,13 @@ def build_report(cfg: Config) -> str:
     if win_log:
         sections.append(("windows watcher log (last 100 lines)", win_log))
 
+    for label, path in (
+        ("macos watcher stderr", cfg.paths.log_dir / "watcher.err.log"),
+        ("macos watcher stdout", cfg.paths.log_dir / "watcher.out.log"),
+    ):
+        if path.is_file():
+            sections.append((f"{label} (last 100 lines)", tail_log(path, n=100)))
+
     parts = [
         "dji-auto-upload support bundle",
         "=" * 70,

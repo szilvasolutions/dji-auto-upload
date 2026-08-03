@@ -108,3 +108,17 @@ def test_a_windows_path_in_literal_quotes_round_trips(tmp_app_paths: AppPaths) -
     tmp_app_paths.config_file.write_text("[paths]\nstage_dir = 'D:\\DJI'\n", encoding="utf-8")
     cfg = load(tmp_app_paths)
     assert str(cfg.paths.stage_dir).replace("/", "\\").endswith("D:\\DJI")
+
+
+def test_custom_stage_dir_is_created_at_startup(tmp_app_paths: AppPaths, tmp_path) -> None:
+    """load() applies [paths] stage_dir after the first ensure_dirs, so the CLI
+    re-ensures; without that the disk precheck stats a missing dir and crashes."""
+    from dji_auto_upload.paths import ensure_dirs
+
+    target = tmp_path / "big" / "DJI"
+    tmp_app_paths.config_file.write_text(
+        f'[paths]\nstage_dir = "{target.as_posix()}"\n', encoding="utf-8"
+    )
+    cfg = load(tmp_app_paths)
+    ensure_dirs(cfg.paths)  # what the CLI does after load()
+    assert cfg.paths.stage_dir.is_dir()

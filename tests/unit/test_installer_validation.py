@@ -153,23 +153,53 @@ def test_runner_can_launch_via_interpreter_when_shim_is_off_path() -> None:
     assert "& 'C:\\Python312\\python.exe' '-m' 'dji_auto_upload' run --device $Drive" in ps
 
 
-def test_watcher_polls_and_hands_off_to_the_visible_runner() -> None:
-    """Event-action registration failed three separate ways in the field
-    (function scope, $using:, then silent process death). The watcher must poll
-    instead, and launch the runner in a VISIBLE window."""
+def test_watcher_polls_and_launches_hidden_worker_plus_visible_viewer() -> None:
+    """Event-action registration failed three separate ways in the field, so the
+    watcher polls. It must start the WORKER hidden (un-closable, so a closed
+    window can't kill the transfer) and the VIEWER visible (closable progress)."""
     from dji_auto_upload.installers.windows_task import _ps_single_quote, _render
 
     ps = _render(
         "dji-watcher.ps1.j2",
-        runner=_ps_single_quote(r"C:\Users\szisz\AppData\Local\dji-auto-upload\dji-run.ps1"),
+        worker=_ps_single_quote(r"C:\Users\szisz\AppData\Local\dji-auto-upload\dji-run.ps1"),
+        viewer=_ps_single_quote(r"C:\Users\szisz\AppData\Local\dji-auto-upload\dji-view.ps1"),
         vendor_ids=["2ca3"],
         labels=["DJI"],
     )
-    # No event registration anywhere in the executable body.
     code = "\n".join(ln for ln in ps.splitlines() if not ln.strip().startswith("#"))
     assert "Register-WmiEvent" not in code
     assert "Get-ReadyRemovableDrives" in code
-    assert "-WindowStyle Normal" in code
-    assert "dji-run.ps1" in code
-    # And it must not reference the variable that was removed with the split.
-    assert "DjiBinary" not in ps
+    # Worker launched hidden; viewer launched visible.
+    assert "-WindowStyle Hidden" in code and "dji-run.ps1" in ps
+    assert "-WindowStyle Normal" in code and "dji-view.ps1" in ps
+
+
+def test_viewer_is_read_only_and_never_runs_an_offload() -> None:
+    """Closing the viewer must be harmless: it only watches, it never itself runs
+    the offload."""
+    from dji_auto_upload.installers.windows_task import _ps_single_quote, _render
+
+    ps = _render(
+        "dji-view.ps1.j2",
+        binary=_ps_single_quote(r"C:\Python312\python.exe"),
+        pre_args=["-m", "dji_auto_upload"],
+    )
+    assert "watch-run" in ps
+    assert "run --device" not in ps
+
+
+def test_worker_maps_exit_codes_to_distinct_popups() -> None:
+    """0 = success, 75 = already-running (neither success nor error), else failure
+    with the log path. The 75 case is what stops a skipped run popping 'complete'."""
+    from dji_auto_upload.installers.windows_task import _ps_single_quote, _render
+
+    ps = _render(
+        "dji-run.ps1.j2",
+        binary=_ps_single_quote(r"C:\Python312\python.exe"),
+        pre_args=["-m", "dji_auto_upload"],
+        log_file=r"C:\logs\dji.log",
+    )
+    assert "run --device $Drive" in ps
+    assert "$code -eq 0" in ps
+    assert "$code -eq 75" in ps
+    assert "FAILED" in ps

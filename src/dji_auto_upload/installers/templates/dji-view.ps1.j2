@@ -1,0 +1,12 @@
+# dji-auto-upload VIEWER — the visible progress window.
+#
+# Read-only: it only tails the run-state file via `watch-run`. It is a DIFFERENT
+# process from the worker (dji-run.ps1), so closing this window at any time
+# leaves the upload running. That is the whole point of splitting the two.
+
+$Host.UI.RawUI.WindowTitle = 'DJI Auto Upload'
+Write-Host ''
+Write-Host '  You can close this window any time - the upload keeps going.' -ForegroundColor DarkGray
+Write-Host ''
+
+& '{{ binary }}' {% for a in pre_args or [] %}'{{ a }}' {% endfor %}watch-run

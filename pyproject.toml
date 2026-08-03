@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dji-auto-upload"
-version = "0.4.1"
+version = "0.5.0"
 description = "Plug in your DJI drone. Walk away. Footage shows up in the cloud."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35,7 +35,6 @@ dependencies = [
     "filelock>=3.13",
     "requests>=2.31",
     "jinja2>=3.1",
-    "pyobjc-framework-DiskArbitration>=10.0; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]

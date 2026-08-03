@@ -6,8 +6,9 @@
     <string>{{ label }}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{{ binary }}</string>
-        <string>_watch</string>
+{%- for arg in argv %}
+        <string>{{ arg }}</string>
+{%- endfor %}
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -17,7 +18,9 @@
     <string>{{ log_dir }}/watcher.out.log</string>
     <key>StandardErrorPath</key>
     <string>{{ log_dir }}/watcher.err.log</string>
+    <!-- Standard, not Background: a Background job is throttled to low I/O
+         priority, which drags out a multi-GB copy for no reason. -->
     <key>ProcessType</key>
-    <string>Background</string>
+    <string>Standard</string>
 </dict>
 </plist>

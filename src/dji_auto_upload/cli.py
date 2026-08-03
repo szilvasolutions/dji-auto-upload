@@ -31,6 +31,10 @@ app = typer.Typer(
 console = Console()
 log = logging.getLogger("dji_auto_upload.cli")
 
+# A run skipped because another is in flight exits with this code — not 0 — so
+# the caller (the Windows viewer window) can tell "did nothing" from "did it all".
+EXIT_ALREADY_RUNNING = 75
+
 
 # ---- Global options -------------------------------------------------------
 
@@ -53,6 +57,10 @@ def _root(
         )
     ensure_dirs(paths)
     cfg = load(paths)
+    # load() may have applied a user-chosen [paths] stage_dir that ensure_dirs
+    # above didn't know about yet, so create the final set of dirs now — else
+    # the disk precheck stats a folder that doesn't exist and crashes.
+    ensure_dirs(cfg.paths)
     configure_logging(cfg.paths.log_file, cfg.logging, console_verbose=verbose, quiet=quiet)
     ctx.obj = cfg
 
@@ -98,10 +106,20 @@ def status(ctx: typer.Context) -> None:
         table.add_row("telegram", "[green]configured[/green]")
     else:
         table.add_row("telegram", "[dim]disabled[/dim]")
-    from .logging_setup import tail_log
+    from .runstate import read_state
 
-    last = tail_log(cfg.paths.log_file, n=1).strip()
-    table.add_row("last run", last or "[dim](no runs logged yet)[/dim]")
+    st = read_state(cfg.paths)
+    if st is not None:
+        colour = {"done": "green", "failed": "red", "running": "cyan", "skipped": "yellow"}
+        label = f"[{colour.get(st.status, 'white')}]{st.status}[/] "
+        label += f"({st.stage}, {st.percent:.0f}%)" if st.status == "running" else f"— {st.updated}"
+        if st.status == "failed" and st.error:
+            label += f"\n  [red]{st.error}[/red]"
+        if st.albums:
+            label += f"\n  uploaded: {', '.join(st.albums)}"
+        table.add_row("last run", label)
+    else:
+        table.add_row("last run", "[dim](no runs recorded yet)[/dim]")
     console.print(table)
 
 
@@ -269,6 +287,73 @@ def prune(ctx: typer.Context) -> None:
     console.print(f"Pruned {n} stage dir(s).")
 
 
+@app.command("watch-run")
+def watch_run(
+    ctx: typer.Context,
+    once: bool = typer.Option(False, "--once", help="Print current state once and exit."),
+) -> None:
+    """Show the live progress of the offload (read-only).
+
+    This tails the run-state file; it never touches the offload process, so the
+    window running it can be closed at any time without affecting the transfer.
+    """
+    import time
+
+    from rich.progress import BarColumn, Progress, TextColumn
+
+    from .runstate import read_state
+
+    cfg: Config = ctx.obj
+
+    def render_once() -> str | None:
+        st = read_state(cfg.paths)
+        return st.status if st else None
+
+    if once:
+        st = read_state(cfg.paths)
+        console.print(st if st else "[dim]No run recorded yet.[/dim]")
+        return
+
+    console.print("[bold]DJI Auto Upload[/bold] — you can close this window any time; "
+                  "the upload keeps going.\n")
+    with Progress(
+        TextColumn("[cyan]{task.fields[stage]}[/cyan]"),
+        BarColumn(),
+        TextColumn("{task.percentage:>3.0f}%"),
+        TextColumn("{task.fields[msg]}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("run", total=100, stage="…", msg="")
+        idle = 0
+        while True:
+            st = read_state(cfg.paths)
+            if st is None:
+                idle += 1
+                if idle > 10:
+                    console.print("[dim]No active run.[/dim]")
+                    return
+                time.sleep(1)
+                continue
+            idle = 0
+            progress.update(
+                task, completed=min(100.0, st.percent),
+                stage=st.stage or st.status,
+                msg=(st.current or st.message or "")[:48],
+            )
+            if st.status in ("done", "failed", "skipped"):
+                break
+            time.sleep(1)
+
+    st = read_state(cfg.paths)
+    if st and st.status == "done":
+        console.print(f"\n[bold green]✅ Done.[/bold green] {st.message}")
+    elif st and st.status == "failed":
+        console.print(f"\n[bold red]❌ Failed[/bold red] in {st.stage}: {st.error}")
+        console.print(f"[dim]Log: {cfg.paths.log_file}  •  run `dji-auto-upload diagnose`[/dim]")
+    else:
+        console.print("\n[yellow]Run ended without a clear result — check the log.[/yellow]")
+
+
 @app.command()
 def diagnose(
     ctx: typer.Context,
@@ -295,9 +380,12 @@ def diagnose(
     )
 
 
-@app.command(hidden=True)
+# Explicit name: Typer would otherwise turn `_watch` into the command `-watch`
+# (underscores -> hyphens), which the macOS LaunchAgent's argv `_watch` could
+# never invoke — the reason the macOS trigger never once ran.
+@app.command("_watch", hidden=True)
 def _watch(ctx: typer.Context) -> None:
-    """Internal: macOS LaunchAgent entry point — resident DiskArbitration watcher."""
+    """Internal: macOS LaunchAgent entry point — resident volume watcher."""
     from .installers.macos_launchd import watch_loop
 
     watch_loop(ctx.obj)
@@ -327,8 +415,11 @@ def run(
         with single_flight(cfg.paths.lock_file):
             _run_inner(cfg, notifier, device, dry_run=dry_run)
     except AlreadyRunning:
-        log.info("another offload pass is already in flight; exiting silently")
-        raise typer.Exit(code=0) from None
+        # Distinct from success: "another window is already doing it" must NOT be
+        # reported to the user as "offload complete, footage in the cloud".
+        log.info("another offload pass is already in flight; exiting")
+        console.print("[yellow]An offload is already running — this pass did nothing.[/yellow]")
+        raise typer.Exit(code=EXIT_ALREADY_RUNNING) from None
     except OffloadError as exc:
         from .offload import report_failure
 

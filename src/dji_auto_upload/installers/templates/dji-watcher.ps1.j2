@@ -15,7 +15,11 @@ $ErrorActionPreference = 'Continue'
 
 $VendorIds  = @({% for v in vendor_ids %}'{{ v }}'{% if not loop.last %}, {% endif %}{% endfor %})
 $Labels     = @({% for l in labels %}'{{ l }}'{% if not loop.last %}, {% endif %}{% endfor %})
-$Runner     = '{{ runner }}'
+# Two scripts: WORKER does the offload in a hidden, un-closable console; VIEWER
+# is a visible, closable progress window. Splitting them is what lets the user
+# close the progress window without killing the transfer.
+$Worker     = '{{ worker }}'
+$Viewer     = '{{ viewer }}'
 $LogFile    = Join-Path $env:LOCALAPPDATA 'dji-auto-upload\watcher.log'
 $PollSeconds = 3
 
@@ -75,16 +79,26 @@ function Test-DjiVolume($drive) {
 function Start-Offload($drive) {
     Write-DjiLog "DJI volume detected at $drive - starting offload"
     try {
+        # WORKER: hidden and detached. Its own console means no window the user
+        # can close is attached to it, so the transfer can't be interrupted.
         Start-Process -FilePath 'powershell.exe' `
                       -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass',
-                                      '-File', $script:Runner, '-Drive', $drive) `
+                                      '-WindowStyle', 'Hidden',
+                                      '-File', $script:Worker, '-Drive', $drive) `
+                      -WindowStyle Hidden
+        # Give the worker a moment to publish "running" before the viewer reads.
+        Start-Sleep -Seconds 2
+        # VIEWER: visible, read-only progress. Safe to close.
+        Start-Process -FilePath 'powershell.exe' `
+                      -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass',
+                                      '-File', $script:Viewer) `
                       -WindowStyle Normal
     } catch {
-        Write-DjiLog "ERROR launching runner: $_"
+        Write-DjiLog "ERROR launching offload: $_"
     }
 }
 
-Write-DjiLog "watcher started (runner: $Runner, poll: ${PollSeconds}s)"
+Write-DjiLog "watcher started (worker: $Worker, poll: ${PollSeconds}s)"
 
 # Anything already plugged in when we start counts as an arrival. Plugging the
 # drone in before installing is a normal thing to do, and previously meant

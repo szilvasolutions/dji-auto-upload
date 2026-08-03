@@ -73,27 +73,34 @@ def install(cfg: Config, *, force: bool = False) -> None:
     else:
         binary, pre_args = sys.executable, ["-m", "dji_auto_upload"]
 
-    runner = watcher.with_name("dji-run.ps1")
-    runner.write_text(
+    q_pre = [_ps_single_quote(a) for a in pre_args]
+    worker = watcher.with_name("dji-run.ps1")
+    worker.write_text(
         _render(
             "dji-run.ps1.j2",
             binary=_ps_single_quote(binary),
-            pre_args=[_ps_single_quote(a) for a in pre_args],
+            pre_args=q_pre,
             log_file=str(cfg.paths.log_file),
         ),
+        encoding="utf-8",
+    )
+    viewer = watcher.with_name("dji-view.ps1")
+    viewer.write_text(
+        _render("dji-view.ps1.j2", binary=_ps_single_quote(binary), pre_args=q_pre),
         encoding="utf-8",
     )
     watcher.write_text(
         _render(
             "dji-watcher.ps1.j2",
-            runner=_ps_single_quote(str(runner)),
+            worker=_ps_single_quote(str(worker)),
+            viewer=_ps_single_quote(str(viewer)),
             vendor_ids=list(cfg.detect.vendor_ids),
             labels=list(cfg.detect.volume_labels),
         ),
         encoding="utf-8",
     )
-    console.print(f"[green]Wrote[/green] {watcher}")
-    console.print(f"[green]Wrote[/green] {runner}")
+    for f in (watcher, worker, viewer):
+        console.print(f"[green]Wrote[/green] {f}")
 
     task_xml_path = watcher.with_name("DjiAutoUploadTask.xml")
 
@@ -152,7 +159,7 @@ def install(cfg: Config, *, force: bool = False) -> None:
     if started.returncode == 0:
         console.print(
             "[bold green]Watcher installed and armed.[/bold green] Plug in your drone — "
-            "a console window will pop up and show the offload as it runs."
+            "a progress window opens (safe to close), and you'll get a popup when it's done."
         )
     else:
         console.print(
@@ -175,7 +182,7 @@ def uninstall(cfg: Config) -> None:
         console.print(f"[dim]No '{TASK_NAME}' task found ({proc.stderr.strip()}).[/dim]")
 
     watcher = _watcher_path()
-    for f in (watcher, watcher.with_name("dji-run.ps1")):
+    for f in (watcher, watcher.with_name("dji-run.ps1"), watcher.with_name("dji-view.ps1")):
         if f.exists():
             f.unlink()
             console.print(f"[green]Removed[/green] {f}")

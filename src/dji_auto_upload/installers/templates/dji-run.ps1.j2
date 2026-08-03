@@ -1,25 +1,24 @@
-# dji-auto-upload runner — launched by the watcher in a VISIBLE console window
-# when a DJI volume arrives, so the user can watch the offload happen instead
-# of wondering whether anything is going on.
+# dji-auto-upload WORKER — launched HIDDEN and detached by the watcher.
 #
-# Outcome is announced with a popup: success auto-dismisses after a few
-# seconds, failure stays on screen with the log path.
+# This is the process that actually does the offload. It runs in its own hidden
+# console, so no window the user can see or close is attached to it: closing the
+# visible progress window (dji-view.ps1) cannot interrupt the transfer.
+#
+# It shows the final popup itself — because it can't be closed, that popup is
+# guaranteed to appear whatever the user does with the progress window.
 
 param([string]$Drive)
-
-$Host.UI.RawUI.WindowTitle = 'DJI Auto Upload'
-Write-Host ''
-Write-Host "  DJI device detected at $Drive" -ForegroundColor Green
-Write-Host '  Starting offload - this window closes by itself when done.' -ForegroundColor DarkGray
-Write-Host ''
 
 & '{{ binary }}' {% for a in pre_args or [] %}'{{ a }}' {% endfor %}run --device $Drive
 $code = $LASTEXITCODE
 
 $shell = New-Object -ComObject WScript.Shell
 if ($code -eq 0) {
-    # 64 = info icon; auto-dismisses after 5 seconds.
-    $shell.Popup("DJI offload complete - footage is in your cloud.", 5, 'DJI Auto Upload', 64) | Out-Null
+    # 64 = info icon; auto-dismisses after 6 seconds.
+    $shell.Popup("DJI offload complete - your footage is in the cloud.", 6, 'DJI Auto Upload', 64) | Out-Null
+} elseif ($code -eq 75) {
+    # Already running in another window — did nothing. NOT a success, NOT an error.
+    $shell.Popup("This drone is already being offloaded in another window.", 6, 'DJI Auto Upload', 48) | Out-Null
 } else {
     # 16 = error icon; 0 = stays until dismissed.
     $msg = "DJI offload FAILED (exit code $code).`n`n" +

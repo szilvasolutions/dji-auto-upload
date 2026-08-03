@@ -3,6 +3,42 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - 2026-08-03
+
+### Added
+- **Closing the progress window no longer stops the upload (Windows).** The
+  offload now runs in its own hidden, un-closable process; the visible window is
+  a separate read-only progress viewer. Close it whenever you like — the
+  transfer keeps going, and a popup still reports the result.
+- **A visible progress view**, `dji-auto-upload watch-run`, that tails a live
+  run-state file and shows stage + a progress bar. This is what the Windows
+  progress window runs; it can also be run by hand in a terminal.
+- **A completion/failure signal on every OS.** macOS and Linux now get a native
+  desktop notification when a run finishes or fails (previously only Windows
+  showed anything and Telegram was off by default). Best-effort; degrades to
+  nothing on a headless box.
+- **`dji-auto-upload status` shows the last run's outcome** — done/failed/running,
+  which albums uploaded, and the error if it failed — read from a durable
+  run-state file, so "what happened last time?" no longer means grepping logs.
+- **The macOS auto-trigger now works.** It never ran in any prior release: Typer
+  registered the hidden watcher command as `-watch`, so the LaunchAgent's `_watch`
+  argument could never dispatch and the agent crash-looped silently. Fixed, with
+  a regression test that every plist argument resolves to a real command. The
+  watcher was also rewritten to poll (matching Windows), the LaunchAgent is
+  launched via the interpreter so it works under launchd's stripped PATH, the
+  plist is XML-escaped, install verifies the job is actually running, and the
+  heavy `pyobjc-framework-DiskArbitration` dependency is gone.
+
+### Fixed
+- A run with a custom `[paths] stage_dir` crashed in the disk-space precheck on
+  first use because the folder didn't exist yet. It is created at startup now.
+- A run skipped because another was already in flight exited 0 and, on Windows,
+  popped "offload complete". It now exits with a distinct code and a neutral
+  "already running" message — never a false success.
+
+### Changed
+- `diagnose` now also collects the macOS watcher logs.
+
 ## [0.4.1] - 2026-08-03
 
 ### Fixed
@@ -229,6 +265,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.5.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.3.1...v0.3.2

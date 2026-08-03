@@ -46,5 +46,5 @@ jobs:
           python -m build --wheel --outdir dist
           python -m pip install --force-reinstall dist/*.whl
           dji-auto-upload version
-          python -c "from pathlib import Path; import dji_auto_upload.installers as i; t=Path(i.__file__).parent/'templates'; assert sorted(p.suffix for p in t.iterdir()).count('.j2')==5, sorted(t.iterdir())"
+          python -c "from pathlib import Path; import dji_auto_upload.installers as i; t=Path(i.__file__).parent/'templates'; assert sorted(p.suffix for p in t.iterdir()).count('.j2')==6, sorted(t.iterdir())"
         shell: bash

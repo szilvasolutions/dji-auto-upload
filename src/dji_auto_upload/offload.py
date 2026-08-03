@@ -9,11 +9,13 @@ version emits them.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
+from . import desktop
 from .cleanup import (
     delete_files,
     drone_clock_sane,
@@ -39,10 +41,15 @@ from .ledger import (
 from .logging_setup import tail_log
 from .notifier import Notifier, escape
 from .platform_glue import eject_volume, inhibit_sleep, remount_ro, remount_rw
+from .runstate import RunState, write_state
 from .stage import existing_stage_dirs, stage_dir_for
 from .upload import remote_configured, remote_reachable, upload_files
 
 log = logging.getLogger(__name__)
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @dataclass
@@ -62,6 +69,7 @@ class OffloadRun:
     total_new_count: int = 0
     total_new_bytes: int = 0
     copied_ok: int = 0
+    _rs: RunState | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         self.stage_base = self.config.paths.stage_dir
@@ -74,26 +82,56 @@ class OffloadRun:
         if self.dry_run:
             self._dry_run_report()
             return
+        self._rs = RunState(
+            status="running", stage="starting", pid=os.getpid(),
+            started=_utcnow(), updated=_utcnow(),
+        )
+        self._publish()
         # "Plug in and walk away" is exactly when a laptop idle-sleeps and
         # freezes the transfer, so hold a sleep inhibitor for the whole run.
-        with inhibit_sleep(enabled=self.config.behaviour.inhibit_sleep):
-            self.notifier.send(
-                "start",
-                f"🛸 DJI volume detected at <code>{escape(str(self.volume))}</code>. "
-                "Starting offload…",
-            )
-            self._inventory()
-            self._pre_copy_prune()
-            self._precheck_disk_space()
-            self._copy()
-            self._upload()
-            self._cleanup_drone()
-            ejected = self._eject()
-            self._post_run_prune()
-            done_msg = "🏁 Offload run finished."
-            if ejected:
-                done_msg += " Drone ejected — safe to unplug. 🔌"
-            self.notifier.send("done", done_msg)
+        try:
+            with inhibit_sleep(enabled=self.config.behaviour.inhibit_sleep):
+                self.notifier.send(
+                    "start",
+                    f"🛸 DJI volume detected at <code>{escape(str(self.volume))}</code>. "
+                    "Starting offload…",
+                )
+                self._inventory()
+                self._pre_copy_prune()
+                self._precheck_disk_space()
+                self._copy()
+                self._upload()
+                self._cleanup_drone()
+                ejected = self._eject()
+                self._post_run_prune()
+                done_msg = "🏁 Offload run finished."
+                if ejected:
+                    done_msg += " Drone ejected — safe to unplug. 🔌"
+                self.notifier.send("done", done_msg)
+        except BaseException as exc:
+            # Record the failure durably so the window/status can show it, then
+            # re-raise for the CLI's top-level handler to notify + set exit code.
+            self._publish(status="failed", stage=self._rs.stage,
+                          error=f"{type(exc).__name__}: {exc}")
+            desktop.notify("DJI Auto Upload — failed",
+                           f"Offload failed in {self._rs.stage}. See the log.")
+            raise
+        self._publish(status="done", stage="done", percent=100.0,
+                      message="Footage uploaded." + (" Safe to unplug." if ejected else ""))
+        albums = ", ".join(self._rs.albums) if self._rs.albums else "your cloud"
+        desktop.notify("DJI Auto Upload — done", f"Uploaded to {albums}.")
+
+    # ---- run-state helpers ---------------------------------------------
+
+    def _publish(self, **changes: object) -> None:
+        """Update the shared run-state file (best-effort)."""
+        rs = getattr(self, "_rs", None)
+        if rs is None:
+            return
+        for k, v in changes.items():
+            setattr(rs, k, v)
+        rs.updated = _utcnow()
+        write_state(self.config.paths, rs)
 
     # ---- Stages --------------------------------------------------------
 
@@ -140,6 +178,9 @@ class OffloadRun:
         self.new_files_by_date = new_by_date
         self.total_new_count = total_new_count
         self.total_new_bytes = total_new_bytes
+        self._publish(
+            stage="inventory", files_total=total_new_count, bytes_total=total_new_bytes,
+        )
 
         summary = ", ".join(
             f"{d} ({len(files)})" for d, files in sorted(new_by_date.items())
@@ -166,6 +207,9 @@ class OffloadRun:
     def _precheck_disk_space(self) -> None:
         if self.total_new_bytes <= 0:
             return
+        # A user-chosen stage_dir may not exist yet on first use; disk_usage on a
+        # missing path raises. Create it before measuring free space.
+        self.stage_base.mkdir(parents=True, exist_ok=True)
         log.info("stage=precheck")
         free = shutil.disk_usage(self.stage_base).free
         need = self.total_new_bytes + self.config.behaviour.disk_headroom_mb * 1024 * 1024
@@ -181,6 +225,7 @@ class OffloadRun:
         if not self.new_files_by_date:
             return
         log.info("stage=copy")
+        self._publish(stage="copy", message="Copying from device…")
         progress_count = 0
 
         def _on_progress(fi: FileInfo) -> None:
@@ -190,6 +235,10 @@ class OffloadRun:
                 "copied %d/%d: %s (%.1f MB)",
                 progress_count, self.total_new_count, fi.name, fi.size / 1024 / 1024,
             )
+            # Copy is the first half of the work; report it as 0–50% so the bar
+            # keeps moving before uploads start.
+            pct = (progress_count / self.total_new_count * 50.0) if self.total_new_count else 0.0
+            self._publish(files_done=progress_count, current=fi.name, percent=round(pct, 1))
 
         for d, files in self.new_files_by_date.items():
             stage = stage_dir_for(self.stage_base, d)
@@ -229,6 +278,7 @@ class OffloadRun:
 
     def _upload(self) -> None:
         log.info("stage=upload")
+        self._publish(stage="upload", message="Uploading to cloud…")
         remote_name = self.config.remote.name
         if not remote_configured(remote_name):
             raise OffloadError(
@@ -300,6 +350,12 @@ class OffloadRun:
                 ok.append(f"{album} ({len(result.succeeded)})")
             else:
                 failed.append((album, result.rc, len(result.succeeded), len(result.failed)))
+            done_albums = list(self._rs.albums) if self._rs else []
+            if album not in done_albums:
+                done_albums.append(album)
+            # Uploads are the second half; scale 50–100% across the albums.
+            up_pct = 50.0 + (len(done_albums) / max(1, len(per_date))) * 50.0
+            self._publish(albums=done_albums, current=album, percent=round(up_pct, 1))
 
         if failed:
             ok_str = ", ".join(ok) if ok else "none"

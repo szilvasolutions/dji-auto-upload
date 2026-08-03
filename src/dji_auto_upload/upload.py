@@ -90,9 +90,11 @@ def upload_files(
 ) -> UploadResult:
     """Run `rclone copy --files-from <list>` and return the basenames that succeeded.
 
-    rclone is all-or-nothing per invocation: rc=0 means *all* listed files are on
-    the remote. Anything else means the batch failed and the caller must not
-    append any of these names to the ledger.
+    rc=0 means the batch completed without error; anything else means it failed
+    and the caller must not ledger any of these names. (rc=0 does not by itself
+    prove every listed file was present — a source that vanished is skipped
+    silently — so `append_uploaded` re-checks each file still exists before
+    recording it.)
     """
     if not basenames:
         return UploadResult(succeeded=[], failed=[], rc=0)
