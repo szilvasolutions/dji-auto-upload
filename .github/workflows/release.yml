@@ -41,10 +41,27 @@ jobs:
           python -m build
 
       - name: Verify the wheel installs and carries its templates
+        # Assert the required templates are present by NAME, not by a brittle
+        # count that has to be bumped every time a template is added.
         run: |
           python -m pip install --force-reinstall dist/*.whl
           dji-auto-upload version
-          python -c "from pathlib import Path; import dji_auto_upload.installers as i; t=Path(i.__file__).parent/'templates'; n=sorted(p.name for p in t.iterdir()); assert len([x for x in n if x.endswith('.j2')])==5, n"
+          python - <<'PY'
+          from pathlib import Path
+          import dji_auto_upload.installers as i
+          shipped = {p.name for p in (Path(i.__file__).parent / "templates").iterdir()}
+          required = {
+              "99-dji-auto-upload.rules.j2",
+              "DjiAutoUploadTask.xml.j2",
+              "com.dji-auto-upload.watcher.plist.j2",
+              "dji-watcher.ps1.j2",
+              "dji-run.ps1.j2",
+              "dji-view.ps1.j2",
+          }
+          missing = required - shipped
+          assert not missing, f"wheel is missing templates: {missing}"
+          print("templates OK:", sorted(shipped))
+          PY
 
       - uses: actions/upload-artifact@v4
         with:
