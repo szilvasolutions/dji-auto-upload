@@ -67,10 +67,12 @@ doesn't mount as a drive, so nothing that watches for drives can see it.
   what it would copy, upload, and delete, and changes nothing.
 - **It tells you when it's safe to unplug.** When the run finishes it ejects the
   drone and says so, instead of leaving you guessing mid-copy.
-- **You can watch it, and closing the window is safe.** On Windows a progress
-  window opens when a drone is plugged in; the offload runs in a separate hidden
-  process, so closing that window never interrupts the upload. A popup reports
-  success or failure either way.
+- **You can watch it, and closing the window is safe.** On Windows and macOS a
+  progress window opens when a drone is plugged in, showing a live bar with
+  speed and ETA; the offload runs in a separate process, so closing that window
+  never interrupts the upload. On Linux (where the trigger runs as root, outside
+  your desktop session) progress arrives as a desktop notification that updates
+  in place. Every OS reports the outcome when it finishes.
 - **It tells you when it finished, on every OS.** A desktop notification on
   macOS and Linux, a popup on Windows, and `dji-auto-upload status` always shows
   the last run's outcome. Telegram messages remain available and optional.

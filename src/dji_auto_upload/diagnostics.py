@@ -56,7 +56,17 @@ def _trigger_state() -> str:
         except OSError as exc:
             return f"udev rule present but unreadable: {exc}"
         runs = [ln.strip() for ln in body.splitlines() if "RUN+=" in ln]
-        return "udev rule installed:\n" + "\n".join(runs[:4])
+        state = "udev rule installed:\n" + "\n".join(runs[:4])
+        # The Windows bundle carries watcher.log; the Linux equivalent is the
+        # journal for the transient units the rule dispatches.
+        journal = _run(
+            ["journalctl", "--no-pager", "-n", "40",
+             "--identifier", "dji-auto-upload", "--identifier", "systemd"],
+            timeout=20,
+        )
+        if journal and not journal.startswith("("):
+            state += "\n\nrecent journal:\n" + journal[-2000:]
+        return state
     if sys.platform == "darwin":
         plist = Path.home() / "Library/LaunchAgents/com.dji-auto-upload.watcher.plist"
         state = "installed" if plist.is_file() else "NOT installed"

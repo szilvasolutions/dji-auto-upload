@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,13 +42,22 @@ def needs_copy(src: FileInfo, dest: Path) -> bool:
         return True
 
 
-def copy_one(src: FileInfo, dest: Path, *, verify: bool, timeout_sec: int) -> None:
+def copy_one(
+    src: FileInfo,
+    dest: Path,
+    *,
+    verify: bool,
+    timeout_sec: int,
+    on_bytes: Callable[[int], None] | None = None,
+) -> None:
     """Copy one file atomically. Raises CopyError or DroneDisconnected on failure.
 
-    `timeout_sec` is advisory: shutil.copy2 doesn't take a timeout, so we wrap
-    the underlying read in a worker thread guarded by a deadline. For typical
-    drone clips ≤ 5 GB on USB-3, copies complete in under 30 s — the timeout is
-    a hang-detector, not a normal-path budget.
+    Copies in chunks rather than via shutil.copy2 so `on_bytes` can report
+    progress *within* a file: drone clips run to several GB, and a per-file
+    counter leaves a progress bar frozen for a minute or more per clip.
+
+    `timeout_sec` is an inactivity budget — it only expires when a read has
+    stopped producing data, so a slow-but-working device is never killed.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_suffix(dest.suffix + ".part")
@@ -55,7 +65,7 @@ def copy_one(src: FileInfo, dest: Path, *, verify: bool, timeout_sec: int) -> No
         part.unlink()
 
     try:
-        _copy_with_timeout(src.path, part, timeout_sec)
+        _copy_stream(src.path, part, timeout_sec, on_bytes)
     except FileNotFoundError as exc:
         # Source vanished — drone unplugged mid-copy.
         if part.exists():
@@ -80,28 +90,69 @@ def copy_one(src: FileInfo, dest: Path, *, verify: bool, timeout_sec: int) -> No
     os.replace(part, dest)
 
 
-def _copy_with_timeout(src: Path, dest: Path, timeout_sec: int) -> None:
-    """shutil.copy2 in a thread with a timeout. Cross-platform and dependency-free."""
+# 4 MiB: large enough that syscall overhead is irrelevant on USB, small enough
+# that the progress bar updates several times a second on a fast link.
+CHUNK_BYTES = 4 * 1024 * 1024
+
+
+def _copy_stream(
+    src: Path,
+    dest: Path,
+    timeout_sec: int,
+    on_bytes: Callable[[int], None] | None = None,
+) -> None:
+    """Chunked copy that reports bytes as they land and detects a stalled read.
+
+    The copy runs in a worker thread and the caller's thread watches a shared
+    byte counter. Both halves are needed: a blocking read() cannot be
+    interrupted from the same thread, so a stall check between chunks would
+    never run; and a plain shutil.copy2 in a thread gives no visibility inside
+    a multi-gigabyte file. `timeout_sec` is an inactivity budget — it fires only
+    when the counter has stopped moving, so a slow-but-working device is never
+    killed mid-copy.
+    """
     import threading
 
+    copied = [0]
     err: list[BaseException] = []
+    done = threading.Event()
 
     def worker() -> None:
         try:
-            shutil.copy2(src, dest)
-        except BaseException as e:
+            with open(src, "rb") as fsrc, open(dest, "wb") as fdst:
+                while True:
+                    buf = fsrc.read(CHUNK_BYTES)
+                    if not buf:
+                        break
+                    fdst.write(buf)
+                    copied[0] += len(buf)
+        except BaseException as e:  # re-raised on the caller's thread below
             err.append(e)
+        finally:
+            done.set()
 
     t = threading.Thread(target=worker, daemon=True)
     t.start()
-    t.join(timeout_sec)
-    if t.is_alive():
-        # We can't kill a Python thread cleanly, but the parent process will
-        # exit shortly (this is the offload pipeline's last gasp). Surface a
-        # CopyError so the caller fires `fail` notify with context.
-        raise CopyError(f"copy of {src} timed out after {timeout_sec}s")
+
+    reported = 0
+    last_change = time.monotonic()
+    while not done.wait(0.25):
+        now_copied = copied[0]
+        if now_copied != reported:
+            if on_bytes is not None:
+                on_bytes(now_copied - reported)
+            reported = now_copied
+            last_change = time.monotonic()
+        elif time.monotonic() - last_change > timeout_sec:
+            # The thread cannot be killed, but the process is about to fail the
+            # run and exit, which takes it with us.
+            raise CopyError(f"copy of {src} stalled for {timeout_sec}s")
+
     if err:
         raise err[0]
+    if on_bytes is not None and copied[0] != reported:
+        on_bytes(copied[0] - reported)
+    shutil.copystat(src, dest, follow_symlinks=True)
 
 
 def copy_files(
@@ -111,6 +162,7 @@ def copy_files(
     verify: bool,
     timeout_sec: int,
     on_progress: Callable[[FileInfo], None] | None = None,
+    on_bytes: Callable[[int], None] | None = None,
 ) -> CopyResult:
     """Copy each FileInfo to `dest_dir/<staged-name>`. Skips files already at the right size.
 
@@ -124,7 +176,7 @@ def copy_files(
         if not needs_copy(fi, dest):
             result.skipped += 1
             continue
-        copy_one(fi, dest, verify=verify, timeout_sec=timeout_sec)
+        copy_one(fi, dest, verify=verify, timeout_sec=timeout_sec, on_bytes=on_bytes)
         result.copied += 1
         result.bytes_copied += fi.size
         if on_progress is not None:

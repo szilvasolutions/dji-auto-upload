@@ -30,6 +30,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from rich.console import Console
 
+from .. import desktop
 from ..config import Config
 from ..detect import VolumeInfo, is_dji_volume
 
@@ -178,3 +179,14 @@ def _spawn_offload(mountpoint: Path, cfg: Config) -> None:
         subprocess.Popen(cmd, stdout=logf, stderr=logf, start_new_session=True)
     except OSError as exc:
         log.error("could not launch offload for %s: %s", mountpoint, exc)
+        return
+
+    # Same split as Windows: the worker above is detached and unattached to any
+    # window, and this is a separate read-only viewer the user can close freely.
+    # A LaunchAgent runs inside the user's GUI session, so Terminal opens here.
+    viewer = (
+        [exe, "watch-run"] if exe
+        else [sys.executable, "-m", "dji_auto_upload", "watch-run"]
+    )
+    if not desktop.open_progress_window(viewer):
+        log.info("could not open a progress window — relying on notifications")

@@ -3,6 +3,30 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.0] - 2026-08-03
+
+### Added
+- **Smooth copy progress.** Copying is now chunked and reports bytes as they
+  land, so the bar moves *inside* a file instead of freezing for a minute or
+  more per clip — a 2.8 GB clip used to sit at one number for ~80 seconds.
+- **macOS gets a progress window**, the same split Windows uses: the offload
+  runs detached, and a separate read-only viewer window shows the live bar and
+  can be closed at any time without touching the transfer.
+- **Linux gets live progress notifications** that update in place during a run,
+  rather than nothing at all until the end.
+- `diagnose` now includes the systemd journal for the udev-triggered units on
+  Linux, matching the Windows watcher log.
+
+### Fixed
+- **Desktop notifications never reached anyone on Linux.** The udev trigger runs
+  the offload as root, with no connection to the logged-in user's desktop, so
+  `notify-send` was posting into the void. The user's session is now located and
+  the notification posted as them.
+- Copy stall detection actually works. The rewrite briefly reset its deadline
+  before checking it, which meant the check could never fire; the copy now runs
+  in a worker thread whose byte counter the caller watches, which is the only
+  way to notice a stalled read at all.
+
 ## [0.7.2] - 2026-08-03
 
 ### Fixed
@@ -373,6 +397,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.8.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.6.2...v0.7.0

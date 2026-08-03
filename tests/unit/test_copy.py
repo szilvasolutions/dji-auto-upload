@@ -70,3 +70,37 @@ def test_copy_files_skips_existing(tmp_path: Path) -> None:
     result = copy_files([src1, src2], dest, verify=True, timeout_sec=10)
     assert result.copied == 1
     assert result.skipped == 1
+
+
+def test_copy_reports_bytes_within_a_single_file(tmp_path: Path) -> None:
+    """Drone clips run to several GB. A per-file counter leaves the progress bar
+    frozen for a minute or more per clip; byte callbacks keep it moving."""
+    from dji_auto_upload.copy import CHUNK_BYTES, copy_files
+    from dji_auto_upload.inventory import FileInfo
+
+    src = tmp_path / "BIG.MP4"
+    src.write_bytes(b"x" * (CHUNK_BYTES * 5))  # 5 chunks in ONE file
+    fi = FileInfo(
+        path=src, size=src.stat().st_size, mtime=src.stat().st_mtime, stage_name="BIG.MP4"
+    )
+
+    seen: list[int] = []
+    copy_files([fi], tmp_path / "stage", verify=True, timeout_sec=30, on_bytes=seen.append)
+
+    assert sum(seen) == fi.size
+    assert (tmp_path / "stage" / "BIG.MP4").stat().st_size == fi.size
+
+
+def test_copy_preserves_mtime_so_date_grouping_still_works(tmp_path: Path) -> None:
+    import os
+
+    from dji_auto_upload.copy import copy_files
+    from dji_auto_upload.inventory import FileInfo
+
+    src = tmp_path / "DJI_0001.MP4"
+    src.write_bytes(b"x" * 4096)
+    os.utime(src, (1_700_000_000, 1_700_000_000))
+    fi = FileInfo(path=src, size=4096, mtime=1_700_000_000.0, stage_name="DJI_0001.MP4")
+
+    copy_files([fi], tmp_path / "stage", verify=True, timeout_sec=30)
+    assert int((tmp_path / "stage" / "DJI_0001.MP4").stat().st_mtime) == 1_700_000_000

@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import sys
+import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -48,6 +50,19 @@ from .upload import UploadStats, remote_configured, remote_reachable, upload_fil
 log = logging.getLogger(__name__)
 
 
+# How often a headless run refreshes its desktop notification. Frequent enough
+# to look alive, rare enough not to spam the notification daemon.
+PROGRESS_NOTIFY_SECONDS = 5.0
+
+
+def _mb(n: int) -> str:
+    """Human byte size for the progress line."""
+    gb = n / 1024 / 1024 / 1024
+    if gb >= 1:
+        return f"{gb:.2f} GB"
+    return f"{n / 1024 / 1024:.0f} MB"
+
+
 def _utcnow() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -70,6 +85,10 @@ class OffloadRun:
     total_new_bytes: int = 0
     copied_ok: int = 0
     _rs: RunState | None = field(init=False, default=None)
+    # True when no terminal is attached — a trigger-launched run, where desktop
+    # notifications are the only way the user can see anything happening.
+    _headless: bool = field(init=False, default=False)
+    _last_notify: float = field(init=False, default=0.0)
 
     def __post_init__(self) -> None:
         self.stage_base = self.config.paths.stage_dir
@@ -86,7 +105,10 @@ class OffloadRun:
             status="running", stage="starting", pid=os.getpid(),
             started=_utcnow(), updated=_utcnow(),
         )
+        self._headless = not sys.stdout.isatty()
         self._publish()
+        if self._headless:
+            desktop.notify("DJI Auto Upload", "Offload started…")
         # "Plug in and walk away" is exactly when a laptop idle-sleeps and
         # freezes the transfer, so hold a sleep inhibitor for the whole run.
         try:
@@ -132,6 +154,24 @@ class OffloadRun:
             setattr(rs, k, v)
         rs.updated = _utcnow()
         write_state(self.config.paths, rs)
+        self._notify_progress(rs)
+
+    def _notify_progress(self, rs: RunState) -> None:
+        """Keep a desktop notification updated during a headless run.
+
+        Windows shows a viewer console, but a udev/launchd-triggered run on
+        Linux or macOS has no window at all, so without this a multi-gigabyte
+        transfer is completely invisible. Throttled, and only when nobody is
+        watching a terminal.
+        """
+        if not self._headless or rs.status != "running":
+            return
+        now = time.monotonic()
+        if now - self._last_notify < PROGRESS_NOTIFY_SECONDS:
+            return
+        self._last_notify = now
+        detail = rs.current or rs.message or rs.stage
+        desktop.notify(f"DJI Auto Upload — {rs.percent:.0f}%", detail)
 
     # ---- Stages --------------------------------------------------------
 
@@ -228,6 +268,9 @@ class OffloadRun:
         self._publish(stage="copy", message="Copying from device…")
         progress_count = 0
 
+        copied_bytes = 0
+        total_bytes = max(1, self.total_new_bytes)
+
         def _on_progress(fi: FileInfo) -> None:
             nonlocal progress_count
             progress_count += 1
@@ -235,10 +278,20 @@ class OffloadRun:
                 "copied %d/%d: %s (%.1f MB)",
                 progress_count, self.total_new_count, fi.name, fi.size / 1024 / 1024,
             )
-            # Copy is the first half of the work; report it as 0–50% so the bar
-            # keeps moving before uploads start.
-            pct = (progress_count / self.total_new_count * 50.0) if self.total_new_count else 0.0
-            self._publish(files_done=progress_count, current=fi.name, percent=round(pct, 1))
+            self._publish(files_done=progress_count, current=fi.name)
+
+        def _on_bytes(n: int) -> None:
+            # Byte-level, so the bar moves smoothly *inside* a multi-GB clip
+            # instead of freezing for a minute per file. Copy owns the first
+            # half of the bar; uploads take it from 50% to 100%.
+            nonlocal copied_bytes
+            copied_bytes += n
+            pct = min(50.0, copied_bytes / total_bytes * 50.0)
+            self._publish(
+                percent=round(pct, 1),
+                bytes_done=copied_bytes,
+                current=f"{_mb(copied_bytes)} / {_mb(total_bytes)} copied",
+            )
 
         for d, files in self.new_files_by_date.items():
             stage = stage_dir_for(self.stage_base, d)
@@ -249,6 +302,7 @@ class OffloadRun:
                     verify=self.config.behaviour.verify_after_copy,
                     timeout_sec=self.config.behaviour.copy_timeout_sec,
                     on_progress=_on_progress,
+                    on_bytes=_on_bytes,
                 )
             except DroneDisconnected:
                 # Stage is retained — replug to resume.

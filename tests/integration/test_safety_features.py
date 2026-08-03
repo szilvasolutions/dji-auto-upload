@@ -340,3 +340,44 @@ def test_same_basename_in_two_dcim_folders_both_upload_and_trim_safely(
     # Both drone copies were confirmed-uploaded and removed; none left behind wrongly.
     assert not (dcim / "100MEDIA" / "DJI_001.MP4").exists()
     assert not (second / "DJI_001.MP4").exists()
+
+
+# ---- Headless visibility (Linux/macOS parity with the Windows viewer) ---------
+
+
+def test_headless_run_reports_progress_via_desktop_notifications(
+    tmp_app_paths: AppPaths, synth_volume: Path, fake_rclone: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A udev/launchd-triggered run has no terminal and no window, so without
+    notifications a multi-gigabyte transfer is completely invisible."""
+    posted: list[tuple[str, str]] = []
+    monkeypatch.setattr(offload.desktop, "notify", lambda t, m: posted.append((t, m)) or True)
+    # Pretend no terminal is attached, as when the trigger launches us.
+    monkeypatch.setattr(offload.sys.stdout, "isatty", lambda: False)
+    # Don't let throttling hide the updates in a fast test.
+    monkeypatch.setattr(offload, "PROGRESS_NOTIFY_SECONDS", 0.0)
+
+    _run(_make_config(tmp_app_paths), synth_volume)
+
+    titles = [t for t, _ in posted]
+    assert any("started" in m.lower() for _, m in posted), posted
+    assert any("%" in t for t in titles), titles          # live progress
+    assert any("done" in t.lower() for t in titles), titles  # completion
+
+
+def test_run_with_a_terminal_does_not_spam_notifications(
+    tmp_app_paths: AppPaths, synth_volume: Path, fake_rclone: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Someone running it by hand already sees the output; only the final
+    result is worth a notification."""
+    posted: list[tuple[str, str]] = []
+    monkeypatch.setattr(offload.desktop, "notify", lambda t, m: posted.append((t, m)) or True)
+    monkeypatch.setattr(offload.sys.stdout, "isatty", lambda: True)
+
+    _run(_make_config(tmp_app_paths), synth_volume)
+
+    # Exactly one: the completion notice. No per-progress banners.
+    assert len(posted) == 1, posted
+    assert "done" in posted[0][0].lower()
