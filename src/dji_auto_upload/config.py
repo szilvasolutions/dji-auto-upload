@@ -24,6 +24,9 @@ DEFAULT_CONFIG_TOML = """\
 # dji-auto-upload configuration. Edit freely — comments survive `dji-auto-upload setup` re-runs.
 
 [remote]
+# false = keep everything local: copy off the drone into the folder below and
+# never upload anywhere. rclone is not needed at all in that mode.
+enabled = true
 # Any rclone remote name from `rclone listremotes`. Run `rclone config` to add one.
 name = "gphotos"
 # Where on the remote to put each day's footage. {date} is replaced with YYYY-MM-DD.
@@ -32,8 +35,11 @@ name = "gphotos"
 path_template = "album/DJI-{date}"
 
 [retention]
-# How many days to keep local copies after they've been uploaded. 0 = never delete.
-stage_days = 2
+# How many days to keep local copies after they've been uploaded. 0 = never
+# delete, which is the default: nothing is removed from this computer unless you
+# ask for it. Ignored entirely when remote.enabled = false, because then the
+# local copy IS your archive and deleting it would destroy the only copy.
+stage_days = 0
 # How many days of footage to keep on the drone itself. 0 = never delete from drone.
 # Default 0: we NEVER touch your drone unless you explicitly opt in during setup.
 drone_days = 0
@@ -101,13 +107,18 @@ chat_id   = ""
 
 @dataclass(frozen=True)
 class RemoteConfig:
+    # False = local-only mode: no rclone, no upload, the staging folder is the
+    # destination. Everything else in this class is then unused.
+    enabled: bool = True
     name: str = "gphotos"
     path_template: str = "album/DJI-{date}"
 
 
 @dataclass(frozen=True)
 class RetentionConfig:
-    stage_days: int = 2
+    # 0 = never delete local copies. Deleting anything, from this computer or
+    # from the drone, is strictly opt-in.
+    stage_days: int = 0
     drone_days: int = 0
 
 
@@ -188,11 +199,12 @@ def _parse_config_doc(doc: TOMLDocument | dict[str, Any]) -> Config:
 
     return Config(
         remote=RemoteConfig(
+            enabled=bool(remote_t.get("enabled", True)),
             name=str(remote_t.get("name", "gphotos")),
             path_template=str(remote_t.get("path_template", "album/DJI-{date}")),
         ),
         retention=RetentionConfig(
-            stage_days=int(retention_t.get("stage_days", 2)),
+            stage_days=int(retention_t.get("stage_days", 0)),
             drone_days=int(retention_t.get("drone_days", 0)),
         ),
         detect=DetectConfig(

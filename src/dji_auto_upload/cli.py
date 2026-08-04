@@ -89,10 +89,16 @@ def status(ctx: typer.Context) -> None:
     table.add_row("stage dir", str(cfg.paths.stage_dir))
     table.add_row("log file", str(cfg.paths.log_file))
     table.add_row("retention (stage / drone)", f"{cfg.retention.stage_days}d / {cfg.retention.drone_days}d")
-    table.add_row("rclone remote", cfg.remote.name)
-    table.add_row("path template", cfg.remote.path_template)
-    remotes = list_remotes()
-    if cfg.remote.name in remotes:
+    if not cfg.remote.enabled:
+        table.add_row("destination", "[cyan]this computer only[/cyan] (no cloud upload)")
+        table.add_row("folder", str(cfg.paths.stage_dir))
+    else:
+        table.add_row("rclone remote", cfg.remote.name)
+        table.add_row("path template", cfg.remote.path_template)
+    remotes = list_remotes() if cfg.remote.enabled else []
+    if not cfg.remote.enabled:
+        pass
+    elif cfg.remote.name in remotes:
         # Generous timeout: a cold cloud remote needs an OAuth refresh plus a
         # root listing, and "no" here should mean something, not just "slow".
         ok = remote_reachable(cfg.remote.name, timeout=30)

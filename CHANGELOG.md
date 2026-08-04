@@ -3,6 +3,27 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.0] - 2026-08-04
+
+### Added
+- **Cloud upload is now optional.** Setup asks up front whether you want it. Say
+  no and the tool simply copies footage off the drone into a folder you choose —
+  rclone is never installed, mentioned or required. Cloud remains the default
+  when you want it. Setting up a cloud remote was easily the hardest part of
+  installation, and plenty of people only want their footage on a NAS or an
+  external drive.
+
+### Changed
+- **Nothing is deleted by default, anywhere.** `retention.stage_days` now
+  defaults to `0` (never remove local copies); it previously defaulted to `2`,
+  which quietly deleted them two days after upload. Drone-side deletion was
+  already opt-in and stays that way.
+- In local-only mode the staging folder is never pruned, whatever the retention
+  setting says — it is the only copy of the footage.
+- Trimming the drone in local-only mode is still gated per file on a verified
+  copy, but the wording no longer claims anything is "safely backed up to the
+  cloud": one copy on one disk is not a backup, and setup says so.
+
 ## [0.8.1] - 2026-08-03
 
 ### Changed
@@ -412,6 +433,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.9.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.7.1...v0.7.2

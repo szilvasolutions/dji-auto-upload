@@ -15,10 +15,13 @@ from dji_auto_upload.paths import AppPaths
 def test_load_returns_defaults_when_no_files(tmp_app_paths: AppPaths) -> None:
     cfg = load(tmp_app_paths)
     assert cfg.remote.name == "gphotos"
-    assert cfg.retention.stage_days == 2
-    assert cfg.retention.drone_days == 0  # safe default: never touch the drone unless opted in
-    assert cfg.behaviour.delete_drone_files is False  # drone-side deletion is strictly opt-in
+    # Nothing is ever deleted out of the box — not from this computer, not from
+    # the drone. Both require an explicit opt-in during setup.
+    assert cfg.retention.stage_days == 0
+    assert cfg.retention.drone_days == 0
+    assert cfg.behaviour.delete_drone_files is False
     assert cfg.notifier.enabled is False
+    assert cfg.remote.enabled is True  # cloud on by default, but switchable
 
 
 def test_load_reads_user_overrides(tmp_app_paths: AppPaths) -> None:
@@ -122,3 +125,9 @@ def test_custom_stage_dir_is_created_at_startup(tmp_app_paths: AppPaths, tmp_pat
     cfg = load(tmp_app_paths)
     ensure_dirs(cfg.paths)  # what the CLI does after load()
     assert cfg.paths.stage_dir.is_dir()
+
+
+def test_cloud_upload_can_be_switched_off(tmp_app_paths: AppPaths) -> None:
+    """Local-only mode: no rclone, no upload, the staging folder is the archive."""
+    tmp_app_paths.config_file.write_text("[remote]\nenabled = false\n", encoding="utf-8")
+    assert load(tmp_app_paths).remote.enabled is False

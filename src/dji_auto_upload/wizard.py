@@ -60,10 +60,16 @@ def run_wizard(cfg: Config) -> None:
     write_default_credentials(cfg.paths.credentials_file)
     doc = load_config_doc(cfg.paths.config_file)
 
-    _check_rclone()
-    remote_name, path_template = _pick_remote(doc)
-    stage_dir = _local_folder(doc, cfg)
-    _retention(doc)
+    # Cloud is opt-in. Asking first means someone who just wants footage off the
+    # drone never has to meet rclone, which is by far the hardest part of setup.
+    want_cloud = _ask_cloud(doc)
+    if want_cloud:
+        _check_rclone()
+        remote_name, path_template = _pick_remote(doc)
+    else:
+        remote_name, path_template = "", ""
+    stage_dir = _local_folder(doc, cfg, local_only=not want_cloud)
+    _retention(doc, local_only=not want_cloud)
     save_config_doc(cfg.paths.config_file, doc)
     console.print(f"[green]Saved[/green] {cfg.paths.config_file}")
 
@@ -78,6 +84,37 @@ def run_wizard(cfg: Config) -> None:
 
 
 # ---- Wizard sections ------------------------------------------------------
+
+
+def _ask_cloud(doc: tomlkit.TOMLDocument) -> bool:
+    """Ask whether to upload to a cloud at all, and record the answer."""
+    remote_table = doc.setdefault("remote", tomlkit.table())
+    current = bool(remote_table.get("enabled", True))
+
+    console.print()
+    console.print(
+        Panel(
+            "[bold]Upload to a cloud, or just copy to this computer?[/bold]\n\n"
+            "[cyan]Cloud[/cyan]  — copies off the drone, then uploads to Google Drive,\n"
+            "         Dropbox, OneDrive, a NAS, whatever you use. Needs rclone,\n"
+            "         which means one browser sign-in during setup.\n\n"
+            "[cyan]Local[/cyan]  — copies off the drone into a folder you pick, and stops\n"
+            "         there. No rclone, no accounts, nothing to sign in to.\n"
+            "         [dim]That folder is then your only copy, so it is never\n"
+            "         auto-deleted.[/dim]\n\n"
+            "[dim]You can change this later by re-running setup.[/dim]",
+            title="Where should your footage go?",
+            border_style="blue",
+        )
+    )
+    want = Confirm.ask("Set up cloud upload?", default=current)
+    remote_table["enabled"] = want
+    if not want:
+        console.print(
+            "[green]Local-only mode.[/green] rclone is not needed and nothing will "
+            "be uploaded anywhere."
+        )
+    return want
 
 
 def _check_rclone() -> None:
@@ -166,18 +203,26 @@ def _pick_remote(doc: tomlkit.TOMLDocument) -> tuple[str, str]:
     return chosen, template
 
 
-def _local_folder(doc: tomlkit.TOMLDocument, cfg: Config) -> Path:
-    """Ask where footage should be staged on this computer."""
+def _local_folder(
+    doc: tomlkit.TOMLDocument, cfg: Config, *, local_only: bool = False
+) -> Path:
+    """Ask where footage should be kept on this computer."""
     console.print()
-    console.print(
-        Panel(
+    if local_only:
+        body = (
+            "This is where your footage lands, and it is the only copy — nothing\n"
+            "is uploaded anywhere and nothing here is ever auto-deleted.\n\n"
+            "[dim]Pick a drive with room; a flight can easily be several GB. Backing\n"
+            "this folder up somewhere is on you.[/dim]"
+        )
+    else:
+        body = (
             "Clips are copied here first, then uploaded. Pick a drive with room —\n"
             "a flight can easily be several GB.\n\n"
-            "[dim]This is a staging area, not an archive: once a file is confirmed\n"
-            "uploaded and the retention period passes, it is deleted from here.[/dim]",
-            title="Where to keep footage on this computer",
-            border_style="blue",
+            "[dim]Nothing here is deleted unless you ask for it during setup.[/dim]"
         )
+    console.print(
+        Panel(body, title="Where to keep footage on this computer", border_style="blue")
     )
 
     paths_table = doc.get("paths")
@@ -220,13 +265,17 @@ def _run_rclone_config() -> None:
     subprocess.run(["rclone", "config"], check=False)
 
 
-def _retention(doc: tomlkit.TOMLDocument) -> None:
+def _retention(doc: tomlkit.TOMLDocument, *, local_only: bool = False) -> None:
     retention = doc.setdefault("retention", tomlkit.table())
     behaviour = doc.setdefault("behaviour", tomlkit.table())
     console.print()
 
     # --- Local copies on this computer ---
-    if Confirm.ask(
+    if local_only:
+        # The local copy is the only copy; offering to delete it would be
+        # offering to throw the footage away.
+        retention["stage_days"] = 0
+    elif Confirm.ask(
         "Keep a permanent copy of your footage on this computer?",
         default=True,
     ):
@@ -238,12 +287,20 @@ def _retention(doc: tomlkit.TOMLDocument) -> None:
         )
 
     # --- Footage on the drone itself (destructive — opt-in) ---
+    safely = (
+        "copied to this computer" if local_only else "safely backed up to the cloud"
+    )
     console.print(
         "\n[dim]By default we never delete anything from the drone. You can let it "
-        "auto-trim old clips once they're safely backed up to the cloud.[/dim]"
+        f"auto-trim old clips once they're {safely}.[/dim]"
     )
+    if local_only:
+        console.print(
+            "[yellow]Note:[/yellow] with no cloud upload, trimming the drone leaves "
+            "you with a single copy on this computer."
+        )
     if Confirm.ask(
-        "Delete footage off the drone after it's uploaded?",
+        f"Delete footage off the drone after it's {safely}?",
         default=False,
     ):
         days = IntPrompt.ask(

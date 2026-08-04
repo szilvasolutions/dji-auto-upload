@@ -45,16 +45,19 @@ doesn't mount as a drive, so nothing that watches for drives can see it.
 - **Plug and forget, on all three OSes.** Linux triggers straight from udev;
   macOS and Windows run a tiny background watcher that checks for a new drive
   every few seconds. Install it once and you never launch it again.
-- **Your cloud, your choice.** Uploads go through rclone, so Google Drive,
-  Photos, Dropbox, OneDrive, S3, a NAS, whatever you already use. Setup just
-  asks which one.
+- **Cloud optional.** Setup asks whether you want cloud upload at all. Say no
+  and it simply copies off the drone into a folder you pick — no rclone, no
+  accounts, nothing to sign in to. Say yes and uploads go through rclone, so
+  Google Drive, Photos, Dropbox, OneDrive, S3, a NAS, whatever you already use.
 - **Sorted by the day you shot it.** Clips are grouped by recording date, so a
   single plug-in can fill several folders (or albums) if the footage spans days.
 - **You can't upload the same clip twice.** Every batch keeps an `.uploaded`
   ledger. Re-run it, unplug mid-upload, whatever; it resumes exactly where it
   left off and never sends a file again.
 - **It won't delete your footage behind your back.** Out of the box it removes
-  nothing from the drone. Card-trimming is something you switch on during setup,
+  nothing at all — not from the drone, not from your computer. Both are opt-in
+  during setup, and in local-only mode the folder is never auto-cleaned because
+  it is your only copy. Card-trimming is something you switch on during setup,
   and even then a file is only removed if the upload ledger proves that exact
   file reached your cloud. Telemetry sidecars (`.SRT`, `.LRF`) are only removed
   along with the video they belong to, and if the drone's clock looks wrong the
@@ -250,6 +253,7 @@ Edit it freely; comments survive `dji-auto-upload setup` re-runs.
 
 ```toml
 [remote]
+enabled = true     # false = local only: no rclone, no upload, no accounts
 name = "gphotos"
 path_template = "album/DJI-{date}"   # {date} expands to YYYY-MM-DD
 
@@ -260,7 +264,7 @@ path_template = "album/DJI-{date}"   # {date} expands to YYYY-MM-DD
 stage_dir = ''     # e.g. 'D:\\DJI' on Windows, '~/Videos/DJI' elsewhere
 
 [retention]
-stage_days = 2     # delete local copies N days after upload (0 = keep forever)
+stage_days = 0     # 0 = never delete local copies (the default)
 drone_days = 0     # delete drone files older than N days (0 = never touch the drone)
 
 [detect]

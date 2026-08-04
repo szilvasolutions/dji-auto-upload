@@ -241,6 +241,8 @@ class OffloadRun:
 
     def _pre_copy_prune(self) -> None:
         """Self-heal: free space taken by ancient stages before checking precheck."""
+        if not self._may_prune():
+            return
         log.info("stage=prune_stage_pre")
         prune_stage(self.stage_base, self.config.retention.stage_days)
 
@@ -331,6 +333,9 @@ class OffloadRun:
         )
 
     def _upload(self) -> None:
+        if not self.config.remote.enabled:
+            self._record_local_only()
+            return
         log.info("stage=upload")
         self._publish(stage="upload", message="Uploading to cloud…")
         remote_name = self.config.remote.name
@@ -452,6 +457,32 @@ class OffloadRun:
             + ". Skipped: " + (", ".join(skipped) if skipped else "none") + ".",
         )
 
+    def _record_local_only(self) -> None:
+        """Local-only mode: the staging folder is the destination, not a waypoint.
+
+        Files are recorded in the ledger exactly as an upload would record them,
+        because the ledger's real meaning is "this exact file (name + size) is
+        safely at the destination" — which is what gates trimming the drone. The
+        difference is only in what the user is told: a local copy is one copy on
+        one disk, not a backup, and the wording says so.
+        """
+        log.info("stage=local-save")
+        self._publish(stage="saving", message="Saving to this computer…")
+        saved = 0
+        for stage in existing_stage_dirs(self.stage_base):
+            pending = files_needing_upload(stage)
+            if pending:
+                append_uploaded(stage, pending)
+                ledger_path(stage).touch()
+                saved += len(pending)
+        self._publish(percent=100.0)
+        where = escape(str(self.stage_base))
+        self.notifier.send(
+            "done_upload",
+            f"💾 Saved <b>{saved}</b> file(s) to <code>{where}</code> (local only — "
+            "no cloud upload configured).",
+        )
+
     def _cleanup_drone(self) -> None:
         if not self.config.behaviour.delete_drone_files:
             return
@@ -538,8 +569,22 @@ class OffloadRun:
         return ok
 
     def _post_run_prune(self) -> None:
+        if not self._may_prune():
+            return
         log.info("stage=prune_stage_post")
         prune_stage(self.stage_base, self.config.retention.stage_days)
+
+    def _may_prune(self) -> bool:
+        """Local copies are only ever deleted when there is a cloud copy too.
+
+        With uploads off, the staging folder is the user's archive — pruning it
+        would delete the only copy of their footage, whatever the retention
+        setting says.
+        """
+        if not self.config.remote.enabled:
+            log.info("local-only mode — never pruning local copies")
+            return False
+        return True
 
     # ---- Dry run --------------------------------------------------------
 

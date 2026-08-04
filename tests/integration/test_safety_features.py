@@ -381,3 +381,72 @@ def test_run_with_a_terminal_does_not_spam_notifications(
     # Exactly one: the completion notice. No per-progress banners.
     assert len(posted) == 1, posted
     assert "done" in posted[0][0].lower()
+
+
+# ---- Local-only mode (no rclone, no cloud) ------------------------------------
+
+
+def _local_config(paths: AppPaths, *, delete_drone: bool = False, drone_days: int = 0) -> Config:
+    cfg = _make_config(paths, delete_drone=delete_drone, drone_days=drone_days)
+    return replace(cfg, remote=replace(cfg.remote, enabled=False))
+
+
+def test_local_only_saves_footage_without_touching_rclone(
+    tmp_app_paths: AppPaths, synth_volume: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No rclone binary, no remote, no network — the staging folder is the
+    destination. Note this test deliberately does NOT use the fake_rclone
+    fixture: any attempt to shell out would fail."""
+    def explode(*a: object, **k: object) -> None:
+        raise AssertionError("local-only mode must never invoke rclone")
+
+    monkeypatch.setattr(offload, "upload_files", explode)
+    monkeypatch.setattr(offload, "remote_configured", explode)
+
+    notifier = _run(_local_config(tmp_app_paths), synth_volume)
+
+    feb1 = tmp_app_paths.stage_dir / "2026-02-01"
+    assert (feb1 / "DJI_001.MP4").is_file()
+    assert read_ledger(feb1) == {"DJI_001.MP4", "DJI_002.JPG"}
+    assert any("local only" in m for _, m in notifier.events)
+
+
+def test_local_only_never_prunes_the_only_copy(
+    tmp_app_paths: AppPaths, synth_volume: Path,
+) -> None:
+    """With no cloud, pruning the staging folder destroys the footage. It must
+    be refused even when the retention setting would allow it."""
+    cfg = _local_config(tmp_app_paths)
+    cfg = replace(cfg, retention=replace(cfg.retention, stage_days=1))
+    _run(cfg, synth_volume)
+
+    stage = tmp_app_paths.stage_dir / "2026-02-01"
+    # Age the sentinel well past the retention window, then run again.
+    old = time.time() - 30 * 86400
+    os.utime(stage / ".uploaded", (old, old))
+    _run(cfg, synth_volume)
+
+    assert (stage / "DJI_001.MP4").is_file(), "local-only archive was pruned!"
+
+
+def test_local_only_still_only_trims_verified_files_from_the_drone(
+    tmp_app_paths: AppPaths, synth_volume: Path,
+) -> None:
+    """The deletion guarantee is weaker in local mode (one disk, not a cloud) but
+    it is still per-file: nothing leaves the drone unless that exact file is
+    verified in the local archive."""
+    media = synth_volume / "DCIM" / "100MEDIA"
+    for f in media.iterdir():
+        _age(f, 30)
+    orphan = media / "SOLO.SRT"          # sidecar with no video — never copied
+    orphan.write_bytes(b"telemetry")
+    _age(orphan, 30)
+    other = media / "firmware.bin"       # not a media extension — never copied
+    other.write_bytes(b"blob")
+    _age(other, 30)
+
+    _run(_local_config(tmp_app_paths, delete_drone=True, drone_days=1), synth_volume)
+
+    assert not (media / "DJI_001.MP4").exists()   # verified locally -> trimmed
+    assert orphan.exists()                        # never copied -> kept
+    assert other.exists()                         # never copied -> kept
