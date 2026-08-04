@@ -25,3 +25,6 @@ coverage.xml
 credentials.toml
 *.local.toml
 .dji-auto-upload-test/
+
+# local reach tracking, not part of the project
+.stats-history.jsonl
