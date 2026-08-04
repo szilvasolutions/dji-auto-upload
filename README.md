@@ -115,6 +115,22 @@ yourself. The per-OS sections below have the details.
 
 </details>
 
+## If something goes wrong
+
+```bash
+dji-auto-upload status      # what happened on the last run
+dji-auto-upload diagnose    # one file with everything needed to debug it
+```
+
+`diagnose` writes a single support bundle — versions, your settings, which
+rclone remotes exist, whether the trigger is installed and what it points at,
+and the recent logs. Secrets are redacted. Attaching that to an issue is far
+more useful than a description.
+
+[**docs/troubleshooting.md**](docs/troubleshooting.md) covers the common cases
+per OS: nothing happening on plug-in, an expired cloud connection, a device that
+mounts as MTP instead of a drive, and where each log lives.
+
 ## Uninstalling
 
 One command, the mirror of the install:

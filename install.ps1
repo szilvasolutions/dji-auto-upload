@@ -59,15 +59,10 @@ if (-not $py) {
     Write-Step "Python found"
 }
 
-# --- rclone -------------------------------------------------------------------
-if (-not (Get-Command rclone -ErrorAction SilentlyContinue)) {
-    Write-Step "rclone not found - installing via winget"
-    winget install -e --id Rclone.Rclone --source winget `
-        --accept-package-agreements --accept-source-agreements
-    Update-SessionPath
-} else {
-    Write-Step "rclone found"
-}
+# rclone is deliberately NOT installed here. Cloud upload is optional, and setup
+# asks about it before anything is needed - someone who only wants footage
+# copied to a folder should never be made to install it. If they do choose
+# cloud, setup offers to install it for them.
 
 # --- dji-auto-upload ------------------------------------------------------------
 Write-Step "Installing dji-auto-upload"

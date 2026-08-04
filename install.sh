@@ -34,20 +34,10 @@ main() {
     fi
     step "Python found: $(python3 --version)"
 
-    # --- rclone ---------------------------------------------------------------
-    if command -v rclone >/dev/null 2>&1; then
-        step "rclone found: $(rclone version 2>/dev/null | head -1)"
-    else
-        step "rclone not found — installing"
-        if [ "$(uname)" = "Darwin" ] && command -v brew >/dev/null 2>&1; then
-            brew install rclone
-        elif command -v sudo >/dev/null 2>&1; then
-            curl -fsSL https://rclone.org/install.sh | sudo bash
-        else
-            echo "Could not install rclone automatically — install it from https://rclone.org/install/ and re-run." >&2
-            exit 1
-        fi
-    fi
+    # rclone is deliberately NOT installed here. Cloud upload is optional, and
+    # setup asks about it before anything is needed — someone who only wants
+    # footage copied to a folder should never be made to install it, still less
+    # be asked for sudo. If they do choose cloud, setup offers to install it.
 
     # --- dji-auto-upload --------------------------------------------------------
     step "Installing dji-auto-upload"

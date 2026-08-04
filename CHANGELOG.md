@@ -3,6 +3,25 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.2] - 2026-08-04
+
+### Fixed
+- **The installers forced rclone on everyone**, including people who only want
+  footage copied to a folder — on Linux that meant a `sudo` prompt mid-install,
+  and an outright failure if `sudo` wasn't available. Since 0.9.0 made cloud
+  optional this was simply wrong: rclone is no longer touched by the install
+  scripts. Setup asks about cloud first and offers to install rclone only if you
+  choose it.
+- Declining that install (or having it fail) no longer exits setup. It falls
+  back to local-only mode and says so; previously this path called `sys.exit(1)`
+  and left the user with nothing.
+- The setup summary showed an empty remote and `uploads to :` in local-only
+  mode, and the intro still announced it would "walk through rclone".
+
+### Added
+- README now links `docs/troubleshooting.md` and leads with `status` /
+  `diagnose` under "If something goes wrong" — it was previously unreferenced.
+
 ## [0.9.1] - 2026-08-04
 
 ### Added
@@ -449,6 +468,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.9.2]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.8.0...v0.8.1

@@ -46,7 +46,8 @@ def run_wizard(cfg: Config) -> None:
     console.print(
         Panel.fit(
             "[bold]dji-auto-upload setup[/bold]\n"
-            "We'll walk through rclone, retention, and (optionally) Telegram.\n"
+            "A few questions: where your footage should go, what to keep, and\n"
+            "(optionally) Telegram notifications.\n"
             "Re-run anytime — your edits to the TOML files are preserved.",
             border_style="cyan",
         )
@@ -63,8 +64,13 @@ def run_wizard(cfg: Config) -> None:
     # Cloud is opt-in. Asking first means someone who just wants footage off the
     # drone never has to meet rclone, which is by far the hardest part of setup.
     want_cloud = _ask_cloud(doc)
+    if want_cloud and not _ensure_rclone():
+        # No rclone and no way to get it — carry on locally rather than leaving
+        # the user with a half-configured tool that can't do anything.
+        console.print("[green]Continuing without cloud upload.[/green]")
+        doc.setdefault("remote", tomlkit.table())["enabled"] = False
+        want_cloud = False
     if want_cloud:
-        _check_rclone()
         remote_name, path_template = _pick_remote(doc)
     else:
         remote_name, path_template = "", ""
@@ -117,23 +123,49 @@ def _ask_cloud(doc: tomlkit.TOMLDocument) -> bool:
     return want
 
 
-def _check_rclone() -> None:
+def _ensure_rclone() -> bool:
+    """Make sure rclone is available, offering to install it. False if we can't.
+
+    Deliberately NOT a hard exit: cloud upload is optional, so failing to get
+    rclone means falling back to local-only, never dead-ending someone who just
+    wanted their footage off the drone.
+    """
     if shutil.which("rclone"):
-        return
+        return True
+
+    console.print("\n[yellow]rclone isn't installed[/yellow] — it's what does the uploading.")
+    if sys.platform == "darwin":
+        cmd = ["brew", "install", "rclone"]
+        label = "brew install rclone"
+    elif sys.platform == "win32":
+        cmd = ["winget", "install", "-e", "--id", "Rclone.Rclone", "--source", "winget",
+               "--accept-package-agreements", "--accept-source-agreements"]
+        label = "winget install Rclone.Rclone"
+    else:
+        cmd = ["sh", "-c", "curl -fsSL https://rclone.org/install.sh | sudo bash"]
+        label = "curl https://rclone.org/install.sh | sudo bash"
+
+    have_tool = shutil.which(cmd[0]) is not None
+    if have_tool and Confirm.ask(f"Install it now with [cyan]{label}[/cyan]?", default=True):
+        console.print("[dim]Installing rclone…[/dim]")
+        try:
+            subprocess.run(cmd, check=False)
+        except OSError as exc:
+            console.print(f"[yellow]Could not run the installer: {exc}[/yellow]")
+        if shutil.which("rclone"):
+            console.print("[green]rclone installed.[/green]")
+            return True
+
     url = "https://rclone.org/install/"
     console.print(
         Panel(
-            f"[red]rclone not found on PATH[/red]\n"
-            f"Install it from: [link={url}]{url}[/link]\n\n"
-            "macOS: [cyan]brew install rclone[/cyan]\n"
-            "Linux: [cyan]curl https://rclone.org/install.sh | sudo bash[/cyan]\n"
-            "Windows: [cyan]winget install Rclone.Rclone[/cyan]",
-            title="Missing dependency",
-            border_style="red",
+            f"rclone still isn't available. Install it from [link={url}]{url}[/link]\n"
+            f"(or: [cyan]{label}[/cyan]) and re-run [cyan]dji-auto-upload setup[/cyan].",
+            title="Cloud upload needs rclone",
+            border_style="yellow",
         )
     )
-    console.print("Re-run [cyan]dji-auto-upload setup[/cyan] once rclone is installed.")
-    sys.exit(1)
+    return False
 
 
 def _pick_remote(doc: tomlkit.TOMLDocument) -> tuple[str, str]:
@@ -439,9 +471,13 @@ def _summary(remote: str, template: str, doc: tomlkit.TOMLDocument, stage_dir: P
     table.add_column("key", style="cyan")
     table.add_column("value")
     retention = doc.get("retention", {})
-    table.add_row("rclone remote", remote)
-    table.add_row("uploads to", f"{remote}:{template}")
-    table.add_row("local folder", str(stage_dir))
+    if remote:
+        table.add_row("rclone remote", remote)
+        table.add_row("uploads to", f"{remote}:{template}")
+        table.add_row("local folder", str(stage_dir))
+    else:
+        table.add_row("destination", "this computer only (no cloud upload)")
+        table.add_row("folder", str(stage_dir))
     table.add_row("stage retention", f"{retention.get('stage_days', 2)} day(s)")
     table.add_row("drone retention", f"{retention.get('drone_days', 1)} day(s)")
     console.print()
@@ -450,6 +486,11 @@ def _summary(remote: str, template: str, doc: tomlkit.TOMLDocument, stage_dir: P
         "\n[bold]Next:[/bold] plug in your DJI drone, "
         "or run [cyan]dji-auto-upload run --device <path>[/cyan] to test."
     )
+    if not remote:
+        console.print(
+            "[dim]Local-only: nothing is uploaded and nothing in that folder is "
+            "ever auto-deleted. Backing it up is up to you.[/dim]"
+        )
 
 
 def _ensure_default_files(p: Path) -> None:
