@@ -192,7 +192,10 @@ def update(
 def uninstall(
     ctx: typer.Context,
     yes: bool = typer.Option(
-        False, "--yes", "-y", help="Don't ask. Never deletes unuploaded files or the rclone remote."
+        False, "--yes", "-y", help="Don't ask. Never deletes your footage or the rclone remote."
+    ),
+    purge: bool = typer.Option(
+        False, "--purge", help="Also delete the local footage folder. Cannot be undone."
     ),
     keep_config: bool = typer.Option(False, "--keep-config", help="Leave config in place."),
     forget_remote: bool = typer.Option(
@@ -201,7 +204,7 @@ def uninstall(
         help="Also delete the rclone remote and revoke its access token.",
     ),
 ) -> None:
-    """Remove the auto-trigger, and optionally the config and staged files."""
+    """Stop the auto-trigger and remove the tool's settings. Keeps your footage."""
     from rich.prompt import Confirm
 
     from .installers import uninstall as uninstall_trigger_impl
@@ -209,73 +212,68 @@ def uninstall(
         pip_uninstall_command,
         rclone_forget,
         remove_paths,
+        stop_watchers,
         unuploaded_files,
     )
 
     cfg: Config = ctx.obj
 
+    # Stop it actually watching first: removing the trigger while the watcher is
+    # still resident would leave the next plug-in firing a "removed" tool.
+    stopped = stop_watchers()
+    if stopped:
+        console.print(f"[green]Stopped[/green] {stopped} running watcher process(es).")
+
     console.print("[bold]Removing the auto-trigger…[/bold]")
     uninstall_trigger_impl(cfg)
 
-    # Staged footage that never reached the cloud is the one thing here that is
-    # irreplaceable, so it gets its own explicit, defaulted-to-no question.
-    pending = unuploaded_files(cfg)
+    # Footage is never collateral. It is only removed when explicitly asked for,
+    # and never at all when this is the user's only copy.
     stage = cfg.paths.stage_dir
-    if pending:
-        console.print(
-            f"\n[bold yellow]{len(pending)} staged file(s) are NOT confirmed uploaded[/bold yellow] "
-            f"in {stage}:"
-        )
-        for name in pending[:10]:
-            console.print(f"  [yellow]{name}[/yellow]")
-        if len(pending) > 10:
-            console.print(f"  [dim]…and {len(pending) - 10} more[/dim]")
-        console.print("[dim]Copy them somewhere safe before deleting.[/dim]")
-        # --yes must not silently destroy footage that is nowhere else. Keeping
-        # it is recoverable; deleting it is not, so this one always asks.
-        drop_stage = False if yes else Confirm.ask("Delete them anyway?", default=False)
-        if yes:
-            console.print("[dim]Keeping the stage dir (--yes never deletes unuploaded files).[/dim]")
-    elif yes:
-        drop_stage = True
-    else:
-        drop_stage = Confirm.ask(
-            f"\nDelete the local staging dir ({stage})? Everything in it is uploaded.",
-            default=True,
-        )
+    pending = unuploaded_files(cfg)
+    local_only = not cfg.remote.enabled
+    drop_stage = False
 
-    to_remove: list[Path] = []
+    if purge:
+        if local_only:
+            console.print(
+                f"\n[bold red]Refusing to delete {stage}[/bold red] — cloud upload is "
+                "off, so that folder is the only copy of your footage.\n"
+                "Move it somewhere safe, then delete it yourself."
+            )
+        elif pending:
+            console.print(
+                f"\n[bold yellow]{len(pending)} file(s) there are not confirmed "
+                f"uploaded[/bold yellow]; keeping {stage}."
+            )
+            for name in pending[:10]:
+                console.print(f"  [yellow]{name}[/yellow]")
+        else:
+            drop_stage = True
+
     if drop_stage:
-        to_remove.append(stage)
+        remove_paths([stage])
+    elif stage.is_dir():
+        console.print(f"\n[dim]Your footage is still in[/dim] {stage}")
 
     if not keep_config:
-        drop_cfg = yes or Confirm.ask(
-            f"Delete config and credentials ({cfg.paths.config_dir})?", default=True
+        drop_cfg = yes or purge or Confirm.ask(
+            f"Delete settings and credentials ({cfg.paths.config_dir})?", default=True
         )
         if drop_cfg:
-            to_remove += [cfg.paths.config_file, cfg.paths.credentials_file]
+            remove_paths([cfg.paths.config_file, cfg.paths.credentials_file])
 
-    if to_remove:
-        remove_paths(to_remove)
-
-    # Deliberately NOT covered by --yes. The remote belongs to rclone, not to
-    # us: other tools and backup jobs on the same machine may depend on it, and
-    # `rclone config disconnect` revokes the OAuth token server-side, which no
-    # amount of restoring rclone.conf will undo. It takes its own explicit flag.
-    if cfg.remote.name and forget_remote:
+    # Deliberately NOT covered by --yes: the remote belongs to rclone, other
+    # tools may share it, and `rclone config disconnect` revokes the token
+    # server-side, which restoring rclone.conf will not undo.
+    if cfg.remote.enabled and cfg.remote.name and forget_remote:
         console.print(
             f"\n[bold yellow]About to remove the rclone remote {cfg.remote.name!r}.[/bold yellow]\n"
             "This revokes its access token at the provider — anything else using "
-            "this remote (backup jobs, other tools) will stop working and will "
-            "need re-authorising."
+            "it will stop working."
         )
         if yes or Confirm.ask("Continue?", default=False):
             rclone_forget(cfg.remote.name)
-    elif cfg.remote.name:
-        console.print(
-            f"\n[dim]Left the rclone remote {cfg.remote.name!r} alone. "
-            "Use --forget-remote to remove it and revoke its access.[/dim]"
-        )
 
     console.print(
         "\n[bold green]Done.[/bold green] To remove the program itself, run:\n"

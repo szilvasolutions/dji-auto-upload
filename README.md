@@ -115,6 +115,36 @@ yourself. The per-OS sections below have the details.
 
 </details>
 
+## Uninstalling
+
+One command, the mirror of the install:
+
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/szilvasolutions/dji-auto-upload/main/uninstall.ps1 | iex
+```
+
+**macOS / Linux:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/szilvasolutions/dji-auto-upload/main/uninstall.sh | bash
+```
+
+That stops the watcher, removes the auto-trigger and settings, and uninstalls
+the package. **Your footage is never deleted** and rclone is left alone — the
+script tells you where the folder is so you can decide for yourself.
+
+Or, if you just want it to stop watching and keep the program installed:
+
+```bash
+dji-auto-upload uninstall            # trigger + settings; footage untouched
+dji-auto-upload uninstall --purge    # also delete the local footage folder
+```
+
+`--purge` deliberately refuses when the folder is your only copy (local-only
+mode) or when anything in it has not reached the cloud yet.
+
 ## Setting up rclone
 
 dji-auto-upload doesn't lock you into one cloud. It uploads through
@@ -299,7 +329,7 @@ dji-auto-upload uninstall-trigger
 dji-auto-upload status             # config summary, rclone reachable, telegram reachable
 dji-auto-upload watch-run          # live progress of the current run (safe to close)
 dji-auto-upload update             # pull the latest version and refresh the trigger
-dji-auto-upload uninstall          # remove the trigger, and optionally config + staged files
+dji-auto-upload uninstall          # stop the trigger and remove settings (keeps your footage)
 dji-auto-upload diagnose           # write a support bundle to attach to a bug report
 dji-auto-upload test-notify        # send a test message
 dji-auto-upload prune              # manual stage prune

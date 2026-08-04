@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.1] - 2026-08-04
+
+### Added
+- **One-line uninstall on every OS**, mirroring the install: `uninstall.ps1` for
+  Windows and `uninstall.sh` for macOS/Linux. Each stops the watcher, removes
+  the auto-trigger and settings, and uninstalls the package.
+- `uninstall` now stops any running watcher before removing the trigger.
+  Previously a resident watcher could survive its own removal and keep firing on
+  the next plug-in.
+
+### Changed
+- **Uninstall never deletes footage.** Removing the local folder now requires an
+  explicit `--purge`, and even then it is refused when the folder is the only
+  copy (local-only mode) or when anything in it is not yet confirmed in the
+  cloud. `--yes` no longer implies deleting it.
+
 ## [0.9.0] - 2026-08-04
 
 ### Added
@@ -433,6 +449,7 @@ Initial public release.
 - An empty drone (the normal state after a successful offload with cleanup on)
   raised an inventory error and fired a failure notification on every replug.
 
+[0.9.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/szilvasolutions/dji-auto-upload/compare/v0.7.2...v0.8.0

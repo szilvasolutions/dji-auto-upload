@@ -13,7 +13,9 @@ package is installed in.
 
 from __future__ import annotations
 
+import os
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -121,6 +123,52 @@ def _installed_version() -> str | None:
 
 
 # ---- uninstall ---------------------------------------------------------------
+
+
+def stop_watchers() -> int:
+    """Stop any running watcher process on this machine. Returns how many.
+
+    An uninstall that leaves the watcher running means the next drone plug-in
+    still fires a tool the user thinks they removed. Workers are left alone —
+    one may be mid-transfer, and killing it is not our call.
+    """
+    stopped = 0
+    if sys.platform == "win32":
+        ps = (
+            "$p = Get-CimInstance Win32_Process -Filter "
+            "\"Name='powershell.exe' OR Name='wscript.exe'\" | "
+            "Where-Object { $_.CommandLine -match 'dji-watcher|dji-watcher-launch' }; "
+            "$p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -EA SilentlyContinue }; "
+            "@($p).Count"
+        )
+        try:
+            proc = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps],
+                capture_output=True, text=True, timeout=30,
+            )
+            out = proc.stdout.strip()
+            stopped = int(out) if out.isdigit() else 0
+        except (OSError, subprocess.SubprocessError, ValueError):
+            stopped = 0
+        return stopped
+
+    # macOS/Linux: the resident watcher is `... _watch`.
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-f", "dji_auto_upload.*_watch"], capture_output=True, text=True, timeout=15
+        )
+        pids = [int(x) for x in proc.stdout.split() if x.isdigit()]
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return 0
+    for pid in pids:
+        if pid == os.getpid():
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+            stopped += 1
+        except OSError:
+            pass
+    return stopped
 
 
 def unuploaded_files(cfg: Config) -> list[str]:
