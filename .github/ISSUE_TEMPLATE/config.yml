@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or help getting set up
+    url: https://github.com/szilvasolutions/dji-auto-upload/discussions
+    about: Ask here if it isn't a bug, especially anything about rclone or cloud setup
+  - name: rclone documentation
+    url: https://rclone.org/docs/#configure
+    about: Setting up a cloud remote, per provider

@@ -1,0 +1,15 @@
+name: Idea or request
+description: Suggest something the tool should do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like it to do
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What are you trying to achieve
+      description: The problem behind the request, which often has more than one solution

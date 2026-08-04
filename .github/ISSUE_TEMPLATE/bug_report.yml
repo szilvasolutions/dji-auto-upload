@@ -1,0 +1,61 @@
+name: Something isn't working
+description: A run failed, nothing happened on plug-in, or footage ended up somewhere unexpected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The single most useful thing you can attach is the output of
+        `dji-auto-upload diagnose`. It gathers versions, your settings, the
+        trigger state and recent logs into one file, with secrets removed.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      placeholder: I plugged in my Mini 4 Pro and no window appeared.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: DJI device
+      placeholder: Neo, Mini 4 Pro, Goggles 3, Osmo Action 5...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `dji-auto-upload version`
+      placeholder: 0.9.2
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnose
+    attributes:
+      label: Support bundle
+      description: Paste or attach the file from `dji-auto-upload diagnose`
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: The device shows up as a drive with a DCIM folder (not MTP mode)
+        - label: I checked docs/troubleshooting.md
