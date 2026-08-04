@@ -1,91 +1,60 @@
 # dji-auto-upload
 
-> Plug in your DJI drone. Walk away. Footage shows up in your cloud.
+> Plug in your DJI drone, walk away, and your footage copies itself off.
 
 [![CI](https://github.com/szilvasolutions/dji-auto-upload/actions/workflows/ci.yml/badge.svg)](https://github.com/szilvasolutions/dji-auto-upload/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Verified on Linux and Windows](https://img.shields.io/badge/verified%20on-linux%20%7C%20windows-success.svg)](#per-os-installation)
-[![macOS untested](https://img.shields.io/badge/macOS-untested%20on%20hardware-orange.svg)](#per-os-installation)
+[![Verified on Linux and Windows](https://img.shields.io/badge/verified%20on-linux%20%7C%20windows-success.svg)](#install)
+[![macOS untested](https://img.shields.io/badge/macOS-untested%20on%20hardware-orange.svg)](#macos)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/szilvasolus)
 
-My DJI Neo 2 doesn't have an SD card. Everything it records lives on internal
-storage, and there are only two ways to get footage off it: the DJI app, which
-does a slow Wi-Fi transfer to my phone that I have to sit and watch, or a USB
-cable. Neither is something I want to deal with after a flight.
+My DJI Neo 2 has no SD card. Everything it records sits on internal storage, and
+there are only two ways to get it off: the DJI app, which does a slow Wi-Fi
+transfer to my phone that I have to sit and watch, or a USB cable. Neither is
+something I want to deal with after a flight.
 
-So I stopped dealing with it. Now I land, walk inside, and plug the drone into
-my computer. By the time I've set it down, the new clips are already uploading
-to the cloud and the drone's storage is clearing space for next time. I don't
-open an app, I don't drag any files, I don't click anything.
+So I stopped dealing with it. Now I land, walk inside, and plug the drone into my
+computer. By the time I've put it down the new clips are already copying, and the
+drone's storage is clearing space for next time. No app, no dragging files, no
+clicking.
 
-That's the whole idea: plug in a DJI device, walk away, footage shows up in your
-cloud. It works the same whether your footage sits on internal storage (like the
-Neo) or an SD card (like a Mini or a Mavic). Either way the storage never fills
-up, so you never have to stop and clear it by hand.
+It works the same whether your footage lives on internal storage (Neo) or an SD
+card (Mini, Mavic, goggles). Either way the storage never fills up.
 
-## Which DJI devices work?
+## What it does
 
-If your computer sees the device as a USB drive with a `DCIM` folder on it, this
-handles it. That's basically the whole lineup: the drones (Neo, Mini, Air,
-Mavic, Avata, FPV), the FPV **Goggles** (their recordings land in the same
-`DCIM` tree, and yes, it picks those up too), and the Osmo Action / Pocket
-cameras.
+Plug in a DJI device and it copies the new clips off, grouped by the day you shot
+them. If you want, it then uploads them to your cloud and trims the copies it has
+safely stored off the device.
 
-Detection doesn't actually require it to be a DJI at all. It looks for DJI's USB
-vendor ID and the `DJI` / `DJIMEDIA` volume labels first, but the real backstop
-is just "is there a `DCIM` folder here?", so new models tend to work on day one.
+* Cloud is optional. Setup asks. Say no and it just copies into a folder you pick,
+  with no accounts and nothing to sign in to.
+* Nothing is deleted unless you ask for it, on the drone or on your computer.
+* A clip is only ever removed from the drone once that exact file (matched by name
+  and size) is confirmed at its destination.
+* Interrupted transfers resume where they stopped, and nothing is uploaded twice.
+* You can watch it work, and closing the progress window will not stop it.
+* It tells you when it finished, and what went wrong if it didn't.
 
-One thing to watch: a few devices (some Osmo cameras) ask you to pick a mode when
-you plug them in. Choose **mass storage** / **USB drive**, not MTP. An MTP device
-doesn't mount as a drive, so nothing that watches for drives can see it.
+## Which devices work
 
-## What you get
+If your computer sees the device as a USB drive with a `DCIM` folder, this handles
+it: the drones (Neo, Mini, Air, Mavic, Avata, FPV), the FPV goggles, and the Osmo
+Action and Pocket cameras.
 
-- **Plug and forget, on all three OSes.** Linux triggers straight from udev;
-  macOS and Windows run a tiny background watcher that checks for a new drive
-  every few seconds. Install it once and you never launch it again.
-- **Cloud optional.** Setup asks whether you want cloud upload at all. Say no
-  and it simply copies off the drone into a folder you pick — no rclone, no
-  accounts, nothing to sign in to. Say yes and uploads go through rclone, so
-  Google Drive, Photos, Dropbox, OneDrive, S3, a NAS, whatever you already use.
-- **Sorted by the day you shot it.** Clips are grouped by recording date, so a
-  single plug-in can fill several folders (or albums) if the footage spans days.
-- **You can't upload the same clip twice.** Every batch keeps an `.uploaded`
-  ledger. Re-run it, unplug mid-upload, whatever; it resumes exactly where it
-  left off and never sends a file again.
-- **It won't delete your footage behind your back.** Out of the box it removes
-  nothing at all — not from the drone, not from your computer. Both are opt-in
-  during setup, and in local-only mode the folder is never auto-cleaned because
-  it is your only copy. Card-trimming is something you switch on during setup,
-  and even then a file is only removed if the upload ledger proves that exact
-  file reached your cloud. Telemetry sidecars (`.SRT`, `.LRF`) are only removed
-  along with the video they belong to, and if the drone's clock looks wrong the
-  cleanup is skipped entirely rather than guessing.
-- **Your laptop won't fall asleep on the job.** "Walk away" is exactly when a
-  machine decides to idle-sleep and freeze the upload halfway, so a run holds an
-  OS sleep inhibitor until it's finished, then releases it. (Closing the lid
-  still suspends, on any OS. Nothing is lost when it does; see below.)
-- **Try it before you trust it.** `dji-auto-upload run --dry-run` prints exactly
-  what it would copy, upload, and delete, and changes nothing.
-- **It tells you when it's safe to unplug.** When the run finishes it ejects the
-  drone and says so, instead of leaving you guessing mid-copy.
-- **You can watch it, and closing the window is safe.** On Windows and macOS a
-  progress window opens when a drone is plugged in, showing a live bar with
-  speed and ETA; the offload runs in a separate process, so closing that window
-  never interrupts the upload. On Linux (where the trigger runs as root, outside
-  your desktop session) progress arrives as a desktop notification that updates
-  in place. Every OS reports the outcome when it finishes.
-- **It tells you when it finished, on every OS.** A desktop notification on
-  macOS and Linux, a popup on Windows, and `dji-auto-upload status` always shows
-  the last run's outcome. Telegram messages remain available and optional.
-- **It tells you when something breaks.** The failure popup/notification carries
-  the log path and the `diagnose` command; the run's outcome is recorded durably.
+Detection doesn't actually require a DJI. It checks DJI's USB vendor ID and the
+`DJI` / `DJIMEDIA` volume labels first, but the fallback is simply "is there a
+`DCIM` folder here", so new models tend to work on day one.
 
-## Quick start
+One thing to watch: some devices ask you to pick a mode when you plug them in.
+Choose **mass storage** or **USB drive**, not MTP. An MTP device never mounts as a
+drive, so nothing that watches for drives can see it.
 
-One command. It installs Python and rclone if you don't have them, installs
-dji-auto-upload, and walks you through setup — including the plug-in trigger.
+## Install
+
+One command. It installs Python if you need it, installs the tool, and starts
+setup.
 
 **Windows** (paste into PowerShell):
 
@@ -93,168 +62,62 @@ dji-auto-upload, and walks you through setup — including the plug-in trigger.
 irm https://raw.githubusercontent.com/szilvasolutions/dji-auto-upload/main/install.ps1 | iex
 ```
 
-**macOS / Linux** (paste into a terminal):
+**macOS and Linux:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/szilvasolutions/dji-auto-upload/main/install.sh | bash
 ```
 
-Answer the questions, plug in your drone. That's it.
+rclone is not installed at this point. Setup asks whether you want cloud upload
+first, and only offers to install rclone if you say yes.
 
 <details>
-<summary><b>Prefer to install by hand?</b></summary>
+<summary>Prefer to install by hand</summary>
 
-```bash
-pip install dji-auto-upload
-dji-auto-upload setup            # interactive: rclone remote, retention, optional Telegram
-dji-auto-upload install-trigger  # OS-specific auto-trigger (sudo on Linux)
-```
-
-You'll need Python 3.10+ and [rclone](https://rclone.org/install/) installed
-yourself. The per-OS sections below have the details.
-
-</details>
-
-## If something goes wrong
-
-```bash
-dji-auto-upload status      # what happened on the last run
-dji-auto-upload diagnose    # one file with everything needed to debug it
-```
-
-`diagnose` writes a single support bundle — versions, your settings, which
-rclone remotes exist, whether the trigger is installed and what it points at,
-and the recent logs. Secrets are redacted. Attaching that to an issue is far
-more useful than a description.
-
-[**docs/troubleshooting.md**](docs/troubleshooting.md) covers the common cases
-per OS: nothing happening on plug-in, an expired cloud connection, a device that
-mounts as MTP instead of a drive, and where each log lives.
-
-## Uninstalling
-
-One command, the mirror of the install:
-
-**Windows** (PowerShell):
-
-```powershell
-irm https://raw.githubusercontent.com/szilvasolutions/dji-auto-upload/main/uninstall.ps1 | iex
-```
-
-**macOS / Linux:**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/szilvasolutions/dji-auto-upload/main/uninstall.sh | bash
-```
-
-That stops the watcher, removes the auto-trigger and settings, and uninstalls
-the package. **Your footage is never deleted** and rclone is left alone — the
-script tells you where the folder is so you can decide for yourself.
-
-Or, if you just want it to stop watching and keep the program installed:
-
-```bash
-dji-auto-upload uninstall            # trigger + settings; footage untouched
-dji-auto-upload uninstall --purge    # also delete the local footage folder
-```
-
-`--purge` deliberately refuses when the folder is your only copy (local-only
-mode) or when anything in it has not reached the cloud yet.
-
-## Setting up rclone
-
-dji-auto-upload doesn't lock you into one cloud. It uploads through
-[rclone](https://rclone.org), which speaks **Google Drive, Dropbox, OneDrive,
-Google Photos, Amazon S3, Backblaze B2, a NAS over SFTP/SMB, and ~70 other
-backends**. You pick the one you want; `dji-auto-upload setup` just asks for the
-remote's name.
-
-**Install rclone** (once):
-
-| OS | Command |
-|---|---|
-| macOS | `brew install rclone` |
-| Windows | `winget install Rclone.Rclone` |
-| Linux | `curl https://rclone.org/install.sh \| sudo bash` |
-
-**Easy path (Drive / Dropbox / OneDrive / S3 / NAS).** Run `rclone config`,
-choose "New remote", pick your provider, and follow the prompts. For the big
-consumer clouds it's a single browser sign-in. Click *Allow* and you're done.
-Give the remote a name (e.g. `gdrive`) and use that name in setup. In the
-config, a path template like `DJI/{date}` files each day's clips into its own
-folder.
-
-Stuck, or using a provider not covered here? rclone's own docs have a
-step-by-step page for every backend: **[rclone.org/docs — Configure](https://rclone.org/docs/#configure)**
-(for example [Google Drive](https://rclone.org/drive/),
-[Dropbox](https://rclone.org/dropbox/), [OneDrive](https://rclone.org/onedrive/)).
-
-<details>
-<summary><b>Advanced path: Google Photos (extra step, worth knowing)</b></summary>
-
-Google Photos works, but rclone's shared OAuth client is rate-limited to
-**~10 GB/day**. For your own quota you need your own OAuth client:
-
-1. [console.cloud.google.com](https://console.cloud.google.com/) → create a project
-2. Enable the **Photos Library API**
-3. OAuth consent screen → *External* → **Publish App** (so the token doesn't expire weekly)
-4. Credentials → **Desktop app** OAuth client → copy the `client_id` and `client_secret`
-5. `rclone config` → new remote → `google photos` → paste those in
-
-Then use a path template of `album/DJI-{date}` so each date becomes its own
-album. On a headless box, forward the OAuth callback port over SSH:
-`ssh -L 53682:127.0.0.1:53682 user@host`, then open the URL rclone prints.
-
-</details>
-
-Not sure which to choose? **Google Drive is the least-friction option** and the
-one most people should pick.
-
-## Per-OS installation
-
-<details>
-<summary><b>Linux</b></summary>
-
-Requires `rclone` and `udev` (already on every desktop distro).
+Needs Python 3.10 or newer.
 
 ```bash
 pip install dji-auto-upload
 dji-auto-upload setup
-sudo dji-auto-upload install-trigger    # writes /etc/udev/rules.d/99-dji-auto-upload.rules
+dji-auto-upload install-trigger   # sudo on Linux
 ```
-
-The trigger uses `systemd-run` (no `--scope`, with `--collect`) so the
-offload runs as a child of PID 1, which escapes `systemd-udevd`'s seccomp filter,
-which would otherwise block the `mount(2)` syscall. Logs land in `journalctl`.
-
-Run `setup` as your normal user (not with `sudo`) so the config lands in your
-home directory. `install-trigger` then pins the udev rule to that config with
-`--config` and tells you which file it will use; without that the triggered run
-would execute as root, read `/etc/dji-auto-upload/`, and silently fall back to
-defaults. It also means rclone uses *your* `rclone.conf`.
 
 </details>
 
 <details>
-<summary><b>macOS</b> — works in principle, not yet confirmed on real hardware</summary>
+<summary>Linux notes</summary>
 
-> **Honest status:** every code path here is implemented and unit-tested, but no
-> one has yet plugged a real DJI device into a real Mac with this installed. If
-> you try it, `dji-auto-upload diagnose` output in an issue would be genuinely
-> useful — and expect the possibility of a rough edge.
-
-
-Requires `rclone`. Install via Homebrew if needed:
+Run `setup` as your normal user, not with `sudo`, so the config lands in your home
+directory. `install-trigger` then points the udev rule at that config and at your
+`rclone.conf`, and tells you which files it picked. Without that the triggered run
+executes as root, reads `/etc/dji-auto-upload/`, and quietly falls back to
+defaults.
 
 ```bash
-brew install rclone
-pip install dji-auto-upload
-dji-auto-upload setup
-dji-auto-upload install-trigger    # writes ~/Library/LaunchAgents/com.dji-auto-upload.watcher.plist
+sudo dji-auto-upload install-trigger   # writes /etc/udev/rules.d/99-dji-auto-upload.rules
 ```
 
-The trigger registers a per-user LaunchAgent that runs a small watcher
-polling `/Volumes` every 3 seconds. Watch its logs with:
+The rule dispatches through `systemd-run` (no `--scope`, with `--collect`) so the
+offload runs as a child of PID 1. That matters because `systemd-udevd` runs its
+workers under a seccomp filter that blocks the `mount(2)` syscall. Logs go to
+`journalctl`.
+
+</details>
+
+<details id="macos">
+<summary>macOS notes (not yet tested on real hardware)</summary>
+
+Every code path here is implemented and covered by CI, but nobody has plugged a
+real DJI device into a real Mac with this installed. If you try it, I'd like to
+hear how it went; `dji-auto-upload diagnose` output in an issue is the most useful
+thing you can send.
+
+```bash
+dji-auto-upload install-trigger   # writes ~/Library/LaunchAgents/com.dji-auto-upload.watcher.plist
+```
+
+That registers a per-user LaunchAgent running a watcher that polls `/Volumes`
+every 3 seconds. Its log:
 
 ```bash
 tail -f ~/Library/Logs/dji-auto-upload/watcher.err.log
@@ -263,31 +126,107 @@ tail -f ~/Library/Logs/dji-auto-upload/watcher.err.log
 </details>
 
 <details>
-<summary><b>Windows</b></summary>
+<summary>Windows notes</summary>
 
-Install rclone via winget:
+`install-trigger` registers a per-user Scheduled Task, no admin needed. It runs a
+windowless watcher that polls for new drives every 3 seconds. When a DJI volume
+appears, the offload starts in a hidden detached process and a separate progress
+window opens, which you can close at any time without affecting the transfer.
 
-```powershell
-winget install Rclone.Rclone
-pip install dji-auto-upload
-dji-auto-upload setup
-dji-auto-upload install-trigger
-```
-
-The trigger registers a Scheduled Task (per-user, no admin needed) that runs a
-completely windowless PowerShell watcher polling for new drives every 3
-seconds. When a DJI volume appears it starts the offload in a detached hidden
-process plus a separate, closable progress window. Start it by hand with:
+The task showing `Ready` rather than `Running` is normal: its action is a small
+launcher that starts the watcher and exits. To check the watcher itself:
 
 ```powershell
-schtasks /run /tn "DJI Auto Upload Watcher"
+Get-Content "$env:LOCALAPPDATA\dji-auto-upload\watcher.log" -Tail 20
 ```
 
 </details>
 
+## Setup
+
+`dji-auto-upload setup` asks a handful of questions and can be re-run at any time.
+Your edits to the config file survive.
+
+**Where should the footage go.** Cloud, or just a folder on this computer. Local
+means no rclone, no accounts, and nothing to sign in to.
+
+**Which folder on this computer.** Setup creates it, checks it's writable, and
+tells you how much space is free. In local-only mode this folder is your only
+copy, so it is never cleaned up automatically.
+
+**Whether to delete anything.** Both answers default to no. You can let it trim
+clips off the drone once they're safely stored, and you can let it remove local
+copies once they're uploaded. Neither happens unless you say so.
+
+**Telegram notifications** (optional). Setup walks you through a bot token from
+`@BotFather` and picks up your chat ID from the next message you send the bot, so
+there's nothing to copy out of a `getUpdates` URL.
+
+**The auto-trigger**, so plugging in a device starts a run.
+
+### Setting up a cloud
+
+Uploads go through [rclone](https://rclone.org), which speaks Google Drive,
+Dropbox, OneDrive, Google Photos, S3, Backblaze B2, a NAS over SFTP or SMB, and
+about 70 other backends. Setup asks which one, and offers to install rclone if you
+don't have it.
+
+For most providers `rclone config` is a single browser sign-in: choose "New
+remote", pick your provider, follow the prompts, give it a name. Use that name in
+setup. A path like `DJI/{date}` files each day's clips into its own folder.
+
+If your provider isn't obvious, rclone's own docs have a page for every backend:
+[rclone.org/docs](https://rclone.org/docs/#configure), for example
+[Google Drive](https://rclone.org/drive/), [Dropbox](https://rclone.org/dropbox/),
+[OneDrive](https://rclone.org/onedrive/).
+
+Google Drive is the least hassle, and what most people should pick.
+
+<details>
+<summary>Google Photos needs one extra step</summary>
+
+Google Photos works, but rclone's shared OAuth client is rate limited to roughly
+10 GB a day. For your own quota, create your own client:
+
+1. [console.cloud.google.com](https://console.cloud.google.com/), create a project
+2. Enable the Photos Library API
+3. OAuth consent screen, choose External, then **Publish App** so the token doesn't
+   expire weekly
+4. Credentials, create a **Desktop app** OAuth client, copy the `client_id` and
+   `client_secret`
+5. `rclone config`, new remote, `google photos`, paste those in
+
+Then use a path of `album/DJI-{date}` so each date becomes its own album. On a
+machine with no browser, forward the callback port over SSH with
+`ssh -L 53682:127.0.0.1:53682 user@host` and open the URL rclone prints.
+
+</details>
+
+## Commands
+
+```
+dji-auto-upload setup              # the setup wizard, re-runnable
+dji-auto-upload run                # one offload pass, autodetects the device
+dji-auto-upload run --dry-run      # show the whole plan, change nothing
+dji-auto-upload status             # settings, and how the last run went
+dji-auto-upload watch-run          # live progress, safe to close
+dji-auto-upload diagnose           # write a support bundle for a bug report
+dji-auto-upload install-trigger    # install the plug-in trigger
+dji-auto-upload uninstall-trigger  # remove it
+dji-auto-upload update             # update and refresh the trigger
+dji-auto-upload uninstall          # stop the trigger, remove settings, keep footage
+dji-auto-upload test-notify        # send a test Telegram message
+dji-auto-upload prune              # delete local copies past their retention
+dji-auto-upload version
+```
+
+Just after a release, PyPI can serve the previous version for a minute or two
+while its CDN catches up. If `update` reports an older version than you expect,
+run it again shortly rather than assuming it failed.
+
 ## Configuration
 
-`dji-auto-upload setup` writes a TOML config to your platform's config dir:
+`setup` writes a TOML file you can edit directly. Comments survive re-runs.
 
 | OS | Path |
 |---|---|
@@ -295,66 +234,85 @@ schtasks /run /tn "DJI Auto Upload Watcher"
 | macOS | `~/Library/Application Support/dji-auto-upload/config.toml` |
 | Windows | `%APPDATA%\dji-auto-upload\config.toml` |
 
-Edit it freely; comments survive `dji-auto-upload setup` re-runs.
-
 ```toml
 [remote]
 enabled = true     # false = local only: no rclone, no upload, no accounts
 name = "gphotos"
-path_template = "album/DJI-{date}"   # {date} expands to YYYY-MM-DD
+path_template = "album/DJI-{date}"   # {date} becomes YYYY-MM-DD
 
 [paths]
-# Where clips are kept on this computer while they upload. Empty = platform
-# default. Use single quotes on Windows: in double quotes a backslash starts
-# a TOML escape and the line is rejected.
-stage_dir = ''     # e.g. 'D:\\DJI' on Windows, '~/Videos/DJI' elsewhere
+# Where clips are kept on this computer. Empty = platform default.
+# On Windows use single quotes: inside double quotes a backslash starts a TOML
+# escape and the line is rejected.
+stage_dir = ''     # e.g. 'D:\DJI' on Windows, '~/Videos/DJI' elsewhere
 
 [retention]
-stage_days = 0     # 0 = never delete local copies (the default)
-drone_days = 0     # delete drone files older than N days (0 = never touch the drone)
+stage_days = 0     # 0 = never delete local copies (default)
+drone_days = 0     # 0 = never delete anything from the drone (default)
 
 [detect]
-sidecar_extensions = ["srt", "lrf"]  # kept with their video, deleted only with it
-strict_detect      = false           # true = only trigger on DJI vendor ID / volume label
+sidecar_extensions = ["srt", "lrf"]  # removed only along with their video
+strict_detect      = false           # true = require a DJI vendor ID or volume label
 
 [behaviour]
 disk_headroom_mb   = 512
 verify_after_copy  = true
-delete_drone_files = false   # drone-side deletion is strictly opt-in (set during setup)
-eject_when_done    = true    # eject the drone when finished, so it's safe to unplug
-inhibit_sleep      = true    # keep the machine awake while a run is in progress
+delete_drone_files = false   # master switch for trimming the drone
+eject_when_done    = true    # eject when finished so it's safe to unplug
+inhibit_sleep      = true    # keep the machine awake during a run
 
 [notifier]
-enabled = true
+enabled = false
 events  = ["start", "done_copy", "done_upload", "done", "fail"]
 ```
 
-Telegram credentials live in a separate `credentials.toml` (chmod 0600).
-`dji-auto-upload setup` walks you through getting a bot token from `@BotFather`
-and auto-discovers your chat ID by watching for the next message you send to
-your bot, so there's no copy-pasting from `getUpdates` URLs.
+Telegram credentials live separately in `credentials.toml`, mode 0600.
 
-## CLI
+## When something goes wrong
 
-```
-dji-auto-upload setup              # interactive setup wizard
-dji-auto-upload run [--device P]   # one offload pass (autodetects if --device omitted)
-dji-auto-upload run --dry-run      # show the full plan, change nothing
-dji-auto-upload install-trigger    # install per-OS auto-trigger
-dji-auto-upload uninstall-trigger
-dji-auto-upload status             # config summary, rclone reachable, telegram reachable
-dji-auto-upload watch-run          # live progress of the current run (safe to close)
-dji-auto-upload update             # pull the latest version and refresh the trigger
-dji-auto-upload uninstall          # stop the trigger and remove settings (keeps your footage)
-dji-auto-upload diagnose           # write a support bundle to attach to a bug report
-dji-auto-upload test-notify        # send a test message
-dji-auto-upload prune              # manual stage prune
-dji-auto-upload version
+```bash
+dji-auto-upload status      # how the last run went, and why it failed
+dji-auto-upload diagnose    # one file with everything needed to debug it
 ```
 
-> **Just after a new release?** PyPI is eventually consistent across its CDN,
-> so `update` can briefly still see the previous version. Run it again a minute
-> later rather than assuming it failed.
+`diagnose` writes a single support bundle: versions, your settings, which rclone
+remotes exist, whether the trigger is installed and what it points at, and the
+recent logs. Secrets are redacted. Attaching that to an issue is far more useful
+than a description.
+
+[docs/troubleshooting.md](docs/troubleshooting.md) covers the common cases per OS:
+nothing happening on plug-in, an expired cloud connection, a device that mounts as
+MTP instead of a drive, and where each log lives.
+
+## Uninstall
+
+The mirror of the install:
+
+**Windows:**
+
+```powershell
+irm https://raw.githubusercontent.com/szilvasolutions/dji-auto-upload/main/uninstall.ps1 | iex
+```
+
+**macOS and Linux:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/szilvasolutions/dji-auto-upload/main/uninstall.sh | bash
+```
+
+That stops the watcher, removes the trigger and settings, and uninstalls the
+package. Your footage is not deleted and rclone is left alone. The script prints
+where the folder is so you can decide for yourself.
+
+To stop it watching but keep the program:
+
+```bash
+dji-auto-upload uninstall            # trigger and settings, footage untouched
+dji-auto-upload uninstall --purge    # also delete the local footage folder
+```
+
+`--purge` refuses when that folder is your only copy (local-only mode) or when
+anything in it hasn't reached the cloud yet.
 
 ## How it works
 
@@ -364,9 +322,9 @@ USB plug-in
     ▼
 ┌────────────────────────────────────────────────┐
 │  Per-OS trigger                                │
-│  Linux: udev rule → systemd-run                │
-│  macOS: LaunchAgent → /Volumes poll (3 s)      │
-│  Windows: Scheduled Task → drive poll (3 s)    │
+│  Linux:   udev rule -> systemd-run             │
+│  macOS:   LaunchAgent -> /Volumes poll (3 s)   │
+│  Windows: Scheduled Task -> drive poll (3 s)   │
 └──────────────┬─────────────────────────────────┘
                │
                ▼
@@ -375,35 +333,34 @@ USB plug-in
    ┌───────────┼───────────┬────────────┬──────────┐
    ▼           ▼           ▼            ▼          ▼
 inventory   precheck     copy        upload     cleanup
- (group   (free space  (atomic     (rclone     (ledger-
-  by mtime  + headroom)  .part →    --files-     gated
-  date)               os.replace)   from)       prune)
+ (group    (free space  (atomic     (rclone     (ledger-
+  by date)  + headroom)  .part ->    --files-     gated)
+                         replace)     from)
                                        │
                                        ▼
-                               .uploaded ledger
-                                       │
-                                       ▼
-                              Telegram notification
+                              .uploaded ledger
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for the full state machine
-and [`docs/why.md`](docs/why.md) for the bash → Python rewrite story.
+The ledger is the safety mechanism. Each entry records a file's name and byte
+size, meaning "this exact file reached its destination". Nothing is removed from
+the drone unless an entry matches it, which is also why re-running never uploads
+anything twice.
 
-### What if the computer sleeps anyway?
+[docs/architecture.md](docs/architecture.md) has the full state machine, and
+[docs/why.md](docs/why.md) explains the design decisions.
 
-While a run is active it holds a sleep inhibitor (`SetThreadExecutionState` on
-Windows, `caffeinate` on macOS, `systemd-inhibit` on Linux), so an idle machine
-won't suspend mid-transfer. That covers the normal "plug in and walk away" case.
+### If the computer sleeps anyway
 
-It can't stop you closing the lid or choosing Sleep from the menu. If that
-happens mid-upload, nothing is lost and nothing is duplicated: files already
-confirmed are in the `.uploaded` ledger, and anything unconfirmed is simply
-retried. The drone is never trimmed for a file that isn't confirmed in the
-cloud. Replug (or run `dji-auto-upload run`) and it picks up exactly where it
-stopped.
+A run holds a sleep inhibitor (`SetThreadExecutionState` on Windows, `caffeinate`
+on macOS, `systemd-inhibit` on Linux), so an idle machine won't suspend mid
+transfer.
 
-Set `inhibit_sleep = false` if you'd rather the machine follow its normal power
-policy during a run.
+It can't stop you closing the lid. If that happens nothing is lost and nothing is
+duplicated: confirmed files are in the ledger, the rest are retried, and the drone
+is never trimmed for a file that isn't confirmed. Plug in again and it picks up
+where it stopped.
+
+Set `inhibit_sleep = false` to leave your power settings alone.
 
 ## Development
 
@@ -411,21 +368,23 @@ policy during a run.
 git clone https://github.com/szilvasolutions/dji-auto-upload
 cd dji-auto-upload
 pip install -e ".[dev]"
-pytest                       # unit + integration
+pytest
 ruff check .
 mypy src
 ```
 
-The integration test (`tests/integration/test_offload_pipeline.py`) builds a
-synthetic DCIM tree, points the orchestrator at a fake rclone binary
-([`tests/fixtures/fake_rclone.py`](tests/fixtures/fake_rclone.py)), and
-asserts ledger contents, file placement, and notifier event ordering.
+The integration tests build a synthetic DCIM tree and point the orchestrator at a
+fake rclone binary ([tests/fixtures/fake_rclone.py](tests/fixtures/fake_rclone.py)),
+then assert ledger contents, file placement, and notification ordering. The ones
+worth reading first are in
+[tests/integration/test_safety_features.py](tests/integration/test_safety_features.py),
+which cover the cases where footage could be lost.
 
 ## Support this project
 
-This is free and I build it in my spare time. If it saved you the hassle of
-dragging files off a drone, or you want to nudge a feature along, you can buy me
-a coffee. Bug reports and pull requests are just as welcome.
+This is free and I build it in my spare time. If it saved you dragging files off a
+drone, or you want to nudge a feature along, you can buy me a coffee. Bug reports
+and pull requests are just as welcome.
 
 <a href="https://buymeacoffee.com/szilvasolus" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50" width="210"></a>
 
@@ -433,11 +392,9 @@ a coffee. Bug reports and pull requests are just as welcome.
 
 MIT. See [LICENSE](LICENSE).
 
-Uploads are performed by [rclone](https://rclone.org), which is a separate
-MIT-licensed program that you install yourself; this project runs it, it does
-not include it.
+Uploads are performed by [rclone](https://rclone.org), a separate MIT-licensed
+program that you install yourself. This project runs it, it does not include it.
 
 DJI, Mavic, Mini, Air, Avata, Neo and Osmo are trademarks of SZ DJI Technology
-Co., Ltd. This is an independent hobby project and is **not affiliated with,
-authorised by, or endorsed by DJI**. The name describes what the tool works
-with, nothing more.
+Co., Ltd. This is an independent hobby project, not affiliated with, authorised by
+or endorsed by DJI. The name describes what the tool works with, nothing more.
