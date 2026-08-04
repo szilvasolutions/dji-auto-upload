@@ -318,8 +318,7 @@ def watch_run(
         console.print(st if st else "[dim]No run recorded yet.[/dim]")
         return
 
-    console.print("[bold]DJI Auto Upload[/bold] — you can close this window any time; "
-                  "the upload keeps going.\n")
+    console.print("[dim]Watching the current run. Ctrl-C or closing this window is safe.[/dim]\n")
     with Progress(
         TextColumn("[cyan]{task.fields[stage]}[/cyan]"),
         BarColumn(),

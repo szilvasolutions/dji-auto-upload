@@ -22,6 +22,8 @@ clicking.
 It works the same whether your footage lives on internal storage (Neo) or an SD
 card (Mini, Mavic, goggles). Either way the storage never fills up.
 
+![The progress window during a copy](docs/images/progress-window.png)
+
 ## What it does
 
 Plug in a DJI device and it copies the new clips off, grouped by the day you shot
