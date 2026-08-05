@@ -295,6 +295,10 @@ def prune(ctx: typer.Context) -> None:
 def watch_run(
     ctx: typer.Context,
     once: bool = typer.Option(False, "--once", help="Print current state once and exit."),
+    hold: int = typer.Option(
+        0, "--hold", metavar="SECONDS",
+        help="Keep the window open this long after the run ends (0 = close immediately).",
+    ),
 ) -> None:
     """Show the live progress of the offload (read-only).
 
@@ -355,6 +359,34 @@ def watch_run(
         console.print(f"[dim]Log: {cfg.paths.log_file}  •  run `dji-auto-upload diagnose`[/dim]")
     else:
         console.print("\n[yellow]Run ended without a clear result — check the log.[/yellow]")
+
+    # The viewer is usually a window the trigger opened, so returning here closes
+    # it instantly and the result flashes past unread. Hold it long enough to be
+    # read; any keypress dismisses it early.
+    if hold > 0:
+        _hold_window(hold)
+
+
+def _hold_window(seconds: int) -> None:
+    import time
+
+    try:
+        import msvcrt  # Windows only
+    except ImportError:
+        msvcrt = None  # type: ignore[assignment]
+
+    for left in range(seconds, 0, -1):
+        console.print(f"[dim]Closing in {left}s — press any key to close now.[/dim]", end="\r")
+        if msvcrt is not None:
+            for _ in range(10):
+                if msvcrt.kbhit():
+                    msvcrt.getch()
+                    console.print(" " * 60, end="\r")
+                    return
+                time.sleep(0.1)
+        else:
+            time.sleep(1)
+    console.print(" " * 60, end="\r")
 
 
 @app.command()

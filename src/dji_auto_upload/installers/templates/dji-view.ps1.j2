@@ -9,4 +9,4 @@ Write-Host ''
 Write-Host '  You can close this window any time - the upload keeps going.' -ForegroundColor DarkGray
 Write-Host ''
 
-& '{{ binary }}' {% for a in pre_args or [] %}'{{ a }}' {% endfor %}watch-run
+& '{{ binary }}' {% for a in pre_args or [] %}'{{ a }}' {% endfor %}watch-run --hold 20

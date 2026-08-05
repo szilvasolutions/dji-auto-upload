@@ -188,5 +188,6 @@ def _spawn_offload(mountpoint: Path, cfg: Config) -> None:
         [exe, "watch-run"] if exe
         else [sys.executable, "-m", "dji_auto_upload", "watch-run"]
     )
+    viewer += ["--hold", "20"]  # otherwise the Terminal window closes on the result
     if not desktop.open_progress_window(viewer):
         log.info("could not open a progress window — relying on notifications")
