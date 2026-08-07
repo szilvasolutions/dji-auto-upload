@@ -8,6 +8,7 @@ thin wrapper around helper modules so each command is independently testable.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 import typer
@@ -368,25 +369,34 @@ def watch_run(
 
 
 def _hold_window(seconds: int) -> None:
+    import sys
     import time
 
-    try:
-        import msvcrt  # Windows only
-    except ImportError:
-        msvcrt = None  # type: ignore[assignment]
+    # Only Windows can poll the keyboard without putting the terminal in raw
+    # mode, and Windows is where the auto-closing window actually happens.
+    # `sys.platform` (not try/import) so mypy resolves msvcrt per-platform.
+    poll_key: Callable[[], bool] | None = None
+    if sys.platform == "win32":
+        import msvcrt
 
+        def poll_key() -> bool:
+            if msvcrt.kbhit():
+                msvcrt.getch()
+                return True
+            return False
+
+    clear = " " * 60
     for left in range(seconds, 0, -1):
         console.print(f"[dim]Closing in {left}s — press any key to close now.[/dim]", end="\r")
-        if msvcrt is not None:
-            for _ in range(10):
-                if msvcrt.kbhit():
-                    msvcrt.getch()
-                    console.print(" " * 60, end="\r")
-                    return
-                time.sleep(0.1)
-        else:
+        if poll_key is None:
             time.sleep(1)
-    console.print(" " * 60, end="\r")
+            continue
+        for _ in range(10):
+            if poll_key():
+                console.print(clear, end="\r")
+                return
+            time.sleep(0.1)
+    console.print(clear, end="\r")
 
 
 @app.command()
